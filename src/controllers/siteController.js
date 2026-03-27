@@ -6,6 +6,13 @@ import Brochure from '../models/Brochure.js';
 import PricingTier from '../models/PricingTier.js';
 import VenueSetting from '../models/VenueSetting.js';
 import VenueGallery from '../models/VenueGallery.js';
+import FAQ from '../models/FAQ.js';
+import Testimonial from '../models/Testimonial.js';
+import Audience from '../models/Audience.js';
+import Metric from '../models/Metric.js';
+import TravelInfo from '../models/TravelInfo.js';
+import Session from '../models/Session.js';
+import ImportantDate from '../models/ImportantDate.js';
 
 // Helper: safely fetch a SiteSetting by key and return its value
 const fetchSetting = async (key, fallback = []) => {
@@ -59,7 +66,8 @@ export const getSpeakers = async (req, res) => {
 
 export const getProgram = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('program_schedule'));
+        const sessions = await Session.find().sort({ display_order: 1, createdAt: 1 });
+        res.status(200).json(sessions);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch program.' });
     }
@@ -67,7 +75,8 @@ export const getProgram = async (req, res) => {
 
 export const getDates = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('important_dates'));
+        const dates = await ImportantDate.find().sort({ date: 1 });
+        res.status(200).json(dates);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch dates.' });
     }
@@ -153,7 +162,8 @@ export const getTopics = async (req, res) => {
 
 export const getFAQs = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('faqs'));
+        const faqs = await FAQ.find().sort({ display_order: 1 });
+        res.status(200).json(faqs);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch FAQs.' });
     }
@@ -161,7 +171,8 @@ export const getFAQs = async (req, res) => {
 
 export const getTestimonials = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('testimonials'));
+        const tests = await Testimonial.find().sort({ display_order: 1, createdAt: -1 });
+        res.status(200).json(tests);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch testimonials.' });
     }
@@ -169,7 +180,8 @@ export const getTestimonials = async (req, res) => {
 
 export const getAudiences = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('audiences'));
+        const aud = await Audience.find().sort({ display_order: 1 });
+        res.status(200).json(aud);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch audiences.' });
     }
@@ -185,7 +197,8 @@ export const getAboutHighlights = async (req, res) => {
 
 export const getMetrics = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('site_metrics'));
+        const metrics = await Metric.find().sort({ display_order: 1 });
+        res.status(200).json(metrics);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch metrics.' });
     }
@@ -209,7 +222,8 @@ export const getChairs = async (req, res) => {
 
 export const getTravelInfo = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('venue_travel_info'));
+        const info = await TravelInfo.find().sort({ display_order: 1 });
+        res.status(200).json(info);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch travel info.' });
     }

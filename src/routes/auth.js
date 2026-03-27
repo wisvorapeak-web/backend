@@ -7,7 +7,8 @@ import {
   forgotPassword,
   verifyOTP,
   resetPassword,
-  resendOTP
+  resendOTP,
+  registerWithInvitation
 } from '../controllers/authController.js';
 import { authLimiter, passwordResetLimiter } from '../middleware/rateLimitMiddleware.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
@@ -18,6 +19,9 @@ const router = express.Router();
 
 // Register
 router.post('/register', authLimiter, register);
+
+// Register with Invitation
+router.post('/register-invitation', authLimiter, registerWithInvitation);
 
 // Login
 router.post('/login', authLimiter, login);

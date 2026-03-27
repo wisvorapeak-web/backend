@@ -14,6 +14,10 @@ import Metric from '../models/Metric.js';
 import TravelInfo from '../models/TravelInfo.js';
 import VenueSetting from '../models/VenueSetting.js';
 import VenueGallery from '../models/VenueGallery.js';
+import Invitation from '../models/Invitation.js';
+import Session from '../models/Session.js';
+import ImportantDate from '../models/ImportantDate.js';
+import crypto from 'crypto';
 import { sendEmail } from '../config/mailer.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
 
@@ -168,6 +172,94 @@ export const deleteUser = async (req, res) => {
         res.status(200).json({ message: 'User account deactivated.' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete user.' });
+    }
+};
+
+// === INVITATION SYSTEM ===
+
+export const inviteUser = async (req, res) => {
+    try {
+        const { email, role } = req.body;
+
+        if (!email || !role) {
+            return res.status(400).json({ error: 'Email and role are required.' });
+        }
+
+        // Check if user already exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ error: 'A user with this email already exists.' });
+        }
+
+        // Check if a pending invitation exists
+        const pendingInvitation = await Invitation.findOne({ email, status: 'pending' });
+        if (pendingInvitation) {
+            return res.status(400).json({ error: 'A pending invitation already exists for this email.' });
+        }
+
+        // Create invitation token
+        const token = crypto.randomBytes(32).toString('hex');
+        
+        // Expiration: 7 days
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        const invitation = await Invitation.create({
+            email,
+            role,
+            token,
+            invitedBy: req.user?._id || req.user?.id,
+            expiresAt
+        });
+
+        // Send invitation email
+        const registrationUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/register-invitation?token=${token}`;
+        
+        await sendEmail(
+            email,
+            'Invitation to Join Wisvora Scientific Administration',
+            `<h1>Admin Invitation</h1>
+             <p>You have been invited to join the Wisvora Scientific platform as a <strong>${role}</strong>.</p>
+             <p>Please click the link below to complete your registration:</p>
+             <a href="${registrationUrl}" style="display: inline-block; padding: 10px 20px; color: white; background-color: #0ea5e9; text-decoration: none; border-radius: 5px;">Join Administration</a>
+             <p>This link will expire in 7 days.</p>
+             <p>If the button doesn't work, copy and paste this URL into your browser:</p>
+             <p>${registrationUrl}</p>`
+        );
+
+        res.status(201).json({ message: 'Invitation sent successfully.', invitation });
+    } catch (error) {
+        console.error('Invite User Error:', error);
+        res.status(500).json({ error: 'Failed to send invitation.' });
+    }
+};
+
+export const getAllInvitations = async (req, res) => {
+    try {
+        const invitations = await Invitation.find()
+            .populate('invitedBy', 'firstName lastName email')
+            .sort({ createdAt: -1 });
+        res.status(200).json(invitations);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch invitations.' });
+    }
+};
+
+export const revokeInvitation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const invitation = await Invitation.findById(id);
+
+        if (!invitation) {
+            return res.status(404).json({ error: 'Invitation not found.' });
+        }
+
+        invitation.status = 'revoked';
+        await invitation.save();
+
+        res.status(200).json({ message: 'Invitation successfully revoked.' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to revoke invitation.' });
     }
 };
 
@@ -609,3 +701,16 @@ export const deletePricing = async (req, res) => {
     catch (err) { res.status(500).json({ error: 'Failed to delete pricing tier.' }); }
 };
 
+// === SESSION MANAGEMENT ===
+const sessionCrud = createCrudSet(Session, 'Session');
+export const getAllSessions = sessionCrud.getAll;
+export const createSession = sessionCrud.create;
+export const updateSession = sessionCrud.update;
+export const deleteSession = sessionCrud.delete;
+
+// === IMPORTANT DATE MANAGEMENT ===
+const importantDateCrud = createCrudSet(ImportantDate, 'ImportantDate');
+export const getAllImportantDates = importantDateCrud.getAll;
+export const createImportantDate = importantDateCrud.create;
+export const updateImportantDate = importantDateCrud.update;
+export const deleteImportantDate = importantDateCrud.delete;

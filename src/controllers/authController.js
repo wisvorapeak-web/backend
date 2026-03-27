@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
+import Invitation from '../models/Invitation.js';
 import { sendEmail } from '../config/mailer.js';
 import client from '../config/redis.js';
 import { validateEmail, validatePassword } from '../middleware/sanitizationMiddleware.js';
@@ -146,6 +147,85 @@ export const register = async (req, res) => {
 };
 
 /**
+ * Register with Invitation Token
+ * POST /api/auth/register-invitation
+ */
+export const registerWithInvitation = async (req, res) => {
+  try {
+    const { token, firstName, lastName, password, confirmPassword } = req.body;
+
+    if (!token || !firstName || !lastName || !password || !confirmPassword) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'Passwords do not match.' });
+    }
+
+    // Find and validate invitation
+    const invitation = await Invitation.findOne({ token, status: 'pending' });
+
+    if (!invitation) {
+      return res.status(400).json({ error: 'Invalid or expired invitation token.' });
+    }
+
+    if (invitation.expiresAt < new Date()) {
+      invitation.status = 'expired';
+      await invitation.save();
+      return res.status(400).json({ error: 'Invitation has expired.' });
+    }
+
+    // Check if user already exists (redundant but safe)
+    const existingUser = await User.findOne({ email: invitation.email });
+    if (existingUser) {
+      invitation.status = 'accepted';
+      await invitation.save();
+      return res.status(400).json({ error: 'This email is already registered.' });
+    }
+
+    // Create user
+    const user = await User.create({
+      firstName,
+      lastName,
+      email: invitation.email,
+      password,
+      role: invitation.role,
+      isActive: true
+    });
+
+    // Mark invitation as accepted
+    invitation.status = 'accepted';
+    await invitation.save();
+
+    // Generate Token
+    const authToken = generateToken(user.id);
+
+    // Set Cookie
+    res.cookie('token', authToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.status(201).json({
+      message: 'Account created successfully. Welcome to the administration team.',
+      user: {
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: user.role
+      },
+      token: authToken
+    });
+
+  } catch (error) {
+    console.error('Invitation Registration Error:', error);
+    res.status(500).json({ error: 'Failed to complete registration.' });
+  }
+};
+
+/**
  * Login user
  * POST /api/auth/login
  */
@@ -268,25 +348,28 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
-    // Generate OTP for password reset
-    const otp = generateOTP();
-    const otpStored = await storeOTP(`password_reset:${email}`, otp);
+    // Generate temporary reset token (Expires in 10 minutes)
+    const resetToken = jwt.sign(
+      { email, type: 'password_reset' },
+      process.env.JWT_SECRET,
+      { expiresIn: '10m' }
+    );
 
-    if (otpStored) {
-      // Send password reset email with OTP
-      const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/reset-password?email=${encodeURIComponent(email)}`;
-      
-      await sendEmail(
-        email,
-        'Password Reset Request - Wisvora Scientific',
-        `<h1>Password Reset Request</h1>
-         <p>Hi ${user.firstName},</p>
-         <p>You requested a password reset. Your OTP is: <strong>${otp}</strong></p>
-         <p>This OTP will expire in 10 minutes.</p>
-         <p><a href="${resetUrl}">Reset Password</a></p>
-         <p>If you did not request this, please ignore this email.</p>`
-      );
-    }
+    // Send password reset email with direct link
+    const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/admin/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+    
+    await sendEmail(
+      email,
+      'Password Reset Request - Wisvora Scientific',
+      `<h1>Password Reset Request</h1>
+       <p>Hi ${user.firstName},</p>
+       <p>You requested a password reset. Please click the button below to establish a new access key:</p>
+       <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0ea5e9; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-family: sans-serif;">Reset Password</a>
+       <p>This secure link will expire in <strong>10 minutes</strong>.</p>
+       <p>If you did not request this, please ignore this email or contact security if you have concerns.</p>
+       <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+       <p style="font-size: 11px; color: #64748b;">If the button above does not work, copy and paste this link into your browser:<br>${resetUrl}</p>`
+    );
 
     res.status(200).json({ 
       message: 'If email exists, password reset instructions have been sent.' 

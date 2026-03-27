@@ -30,7 +30,10 @@ import {
     getAllTravelInfo, createTravelInfo, updateTravelInfo, deleteTravelInfo,
     updateRegistrationStatus, deleteRegistration,
     getVenueSettings, updateVenueSettings,
-    getAllVenueGallery, createVenueGallery, deleteVenueGallery
+    getAllVenueGallery, createVenueGallery, deleteVenueGallery,
+    inviteUser, getAllInvitations, revokeInvitation,
+    getAllSessions, createSession, updateSession, deleteSession,
+    getAllImportantDates, createImportantDate, updateImportantDate, deleteImportantDate
 } from '../controllers/adminController.js';
 
 const router = express.Router();
@@ -50,6 +53,11 @@ router.get('/stats', cacheMiddleware(900), getAdminStats);
 router.get('/users', cacheMiddleware(1800), getAllUsers);
 router.patch('/users/:id/status', updateUserStatus);
 router.delete('/users/:id', deleteUser);
+
+// Invitations
+router.get('/invitations', getAllInvitations);
+router.post('/invitations', inviteUser);
+router.delete('/invitations/:id', revokeInvitation);
 
 // --- INBOX MANAGEMENT ---
 router.get('/inbox', cacheMiddleware(300), getInboxMessages);
@@ -126,6 +134,17 @@ router.put('/venue', updateVenueSettings);
 router.get('/venue/gallery', getAllVenueGallery);
 router.post('/venue/gallery', createVenueGallery);
 router.delete('/venue/gallery/:id', deleteVenueGallery);
+
+// --- PROGRAM & DATES ---
+router.get('/program', getAllSessions);
+router.post('/program', createSession);
+router.patch('/program/:id', updateSession);
+router.delete('/program/:id', deleteSession);
+
+router.get('/dates', getAllImportantDates);
+router.post('/dates', createImportantDate);
+router.patch('/dates/:id', updateImportantDate);
+router.delete('/dates/:id', deleteImportantDate);
 
 
 // --- BULK EMAIL DISPATCH ---
