@@ -8,18 +8,23 @@
     "dev": "nodemon src/app.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.99.2",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.41.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^7.1.5",
     "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.3.2",
     "multer": "^2.1.1",
     "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^8.0.3",
-    "redis": "^5.11.0"
+    "razorpay": "^2.9.6",
+    "redis": "^5.11.0",
+    "stripe": "^20.4.1",
+    "validator": "^13.11.0",
+    "xss": "^1.0.14"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

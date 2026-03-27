@@ -2,10 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
-import { supabase } from './config/supabase.js';
+dotenv.config();
+
+import mongoose from 'mongoose';
+import connectDB from './config/db.js';
 import { sendEmail } from './config/mailer.js';
 import cloudinary from './config/cloudinary.js';
-import { upload } from './utils/fileUpload.js';
+import { upload, handleUploadError, validateFileUpload } from './utils/fileUpload.js';
+import { sanitizeInput } from './middleware/sanitizationMiddleware.js';
+import { generalLimiter, uploadLimiter } from './middleware/rateLimitMiddleware.js';
 
 // Route Imports
 import authRoutes from './routes/auth.js';
@@ -14,37 +19,52 @@ import submissionRoutes from './routes/submission.js';
 import siteRoutes from './routes/site.js';
 import adminPanelRoutes from './routes/admin_panel.js';
 import setupRoutes from './routes/setup.js';
+import paymentRoutes from './routes/payment.js';
 
-dotenv.config();
+// Connect to MongoDB
+connectDB();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173', // Allow frontend origin
-    credentials: true // Allow cookies to be sent
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    credentials: true
 }));
+
 app.use(express.json());
 app.use(cookieParser());
 
-// --- ROUTES ---
+// Apply input sanitization to all routes
+app.use(sanitizeInput);
 
+// Apply general rate limiting
+app.use(generalLimiter);
+
+// Redis client
 import client from './config/redis.js';
 
-// Root Status
+// --- ROOT STATUS ENDPOINT ---
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
     message: 'Wisvora Scientific Platform API',
     version: '1.0.0',
+    security: {
+      rateLimit: 'enabled',
+      inputSanitization: 'enabled',
+      jwtAuth: 'enabled',
+      passwordEncryption: 'bcrypt (12 rounds)',
+      emailVerification: 'OTP-based'
+    },
     cache: {
       connected: client.isOpen,
       provider: 'Redis'
     },
     database: {
-      provider: 'Supabase',
-      connected: true // Assumed if we reached here without crash or we can check
+      provider: 'MongoDB',
+      connected: mongoose.connection.readyState === 1
     },
     storage: {
       provider: 'Cloudinary',
@@ -66,13 +86,13 @@ app.get('/', (req, res) => {
   });
 });
 
-// Setup Initializer
+// --- SETUP INITIALIZER ---
 app.use('/api/setup', setupRoutes);
 
-// Public Auth Service
+// --- PUBLIC AUTH SERVICE ---
 app.use('/api/auth', authRoutes);
 
-// Public Health Check
+// --- HEALTH CHECK ---
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'online', 
@@ -81,30 +101,50 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Mounted Dashboard Routes (Internally Protected)
+// --- DASHBOARD ROUTES (Protected) ---
 app.use('/api/dashboard', dashboardRoutes);
 
-// Public Submissions (Abstracts, Contacts, Registrations)
+// --- SUBMISSIONS (Public) ---
 app.use('/api/submissions', submissionRoutes);
 
-// Public Site Data (Speakers, Schedule, Settings)
+// --- SITE DATA (Public) ---
 app.use('/api/site', siteRoutes);
 
-// Admin Protected Panel
+// --- ADMIN PANEL (Protected) ---
 app.use('/api/admin', adminPanelRoutes);
 
-// Image Upload Endpoint (Publicly accessible but could be protected)
-app.post('/api/upload', upload.single('file'), (req, res) => {
+// --- PAYMENT ROUTES ---
+app.use('/api/payments', paymentRoutes);
+
+app.post('/api/upload', (req, res, next) => {
+  console.log('Incoming Upload Protocol:', {
+    headers: req.headers['content-type'],
+    method: req.method
+  });
+  next();
+}, upload.single('file'), handleUploadError, validateFileUpload, (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
-    res.json({ message: 'Upload successful', url: req.file.path, id: req.file.filename });
+    console.log('Final Asset Verification:', {
+      file: !!req.file,
+      mimetype: req.file?.mimetype,
+      size: req.file?.size
+    });
+    
+    // Fallback for memoryStorage
+    const fileUrl = req.file.path || `data:${req.file.mimetype};base64,${req.file.buffer?.toString('base64').substring(0, 50)}...`;
+    
+    res.json({ 
+      message: 'Transmission Successful', 
+      url: fileUrl, 
+      id: req.file.filename || `tmp-${Date.now()}`
+    });
   } catch (error) {
-    console.error('Upload Error:', error);
-    res.status(500).json({ error: 'Upload failed.' });
+    console.error('Terminal Pipeline Collision:', error);
+    res.status(500).json({ error: 'Critical transmission failure.' });
   }
 });
 
-// Mail Service Endpoint
+// --- MAIL SERVICE ENDPOINT ---
 app.post('/api/mail', async (req, res) => {
   const { to, subject, html } = req.body;
   if (!to || !subject || !html) return res.status(400).json({ error: 'Missing required mail fields.' });
@@ -117,23 +157,38 @@ app.post('/api/mail', async (req, res) => {
 // --- GLOBAL ERROR HANDLING ---
 app.use((err, req, res, next) => {
   console.error('Unhandled Error:', err);
+  
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation Error',
+      details: err.message
+    });
+  }
+
+  if (err.message && err.message.includes('File')) {
+    return res.status(400).json({
+      error: 'File Upload Error',
+      details: err.message
+    });
+  }
+
   res.status(err.status || 500).json({
     error: err.message || 'Something went wrong on the server',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
 
-// Start the server
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found.' });
+});
+
+// --- START SERVER ---
 app.listen(PORT, async () => {
     console.log(`🚀 Wisvora Backend running on http://localhost:${PORT}`);
     
-    // Check Supabase Connectivity
-    try {
-        const { data, error } = await supabase.from('profiles').select('id').limit(1);
-        if (error) throw error;
-        console.log('✅ Supabase Connection: Active');
-    } catch (err) {
-        console.error('❌ Supabase Connection: Failed', err.message);
-    }
+    // Database connectivity will be logged by connectDB()
 
     // Check Cloudinary Connectivity
     try {
@@ -143,6 +198,13 @@ app.listen(PORT, async () => {
         }
     } catch (err) {
         console.error('❌ Cloudinary Connection: Failed', err.message);
+    }
+
+    // Check Redis Connectivity
+    if (client.isOpen) {
+        console.log('✅ Redis Connection: Active');
+    } else {
+        console.warn('⚠️ Redis Connection: Check status');
     }
 });
 

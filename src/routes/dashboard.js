@@ -1,41 +1,39 @@
 import express from 'express';
-import { authMiddleware } from '../middleware/authMiddleware.js';
 import { 
-  getProfile, 
-  updateProfile, 
-  getAbstracts, 
-  submitAbstract,
-  getRegistrations, 
-  getEvents, 
-  getSettings,
-  getStats
+    getProfile, 
+    updateProfile, 
+    getAbstracts, 
+    submitAbstract, 
+    getRegistrations, 
+    getEvents, 
+    getSettings, 
+    getStats 
 } from '../controllers/dashboardController.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-/**
- * All routes in /api/dashboard require authentication.
- */
+// Apply authentication middleware to all dashboard routes
 router.use(authMiddleware);
 
-// --- Overview Stats ---
-router.get('/stats', getStats);
-
-// --- User Profile ---
+// Profile
 router.get('/profile', getProfile);
 router.patch('/profile', updateProfile);
 
-// --- Scientific Abstracts ---
+// Abstracts
 router.get('/abstracts', getAbstracts);
-router.post('/abstracts/submit', submitAbstract);
+router.post('/abstracts', submitAbstract);
 
-// --- Events & Schedule ---
-router.get('/events', getEvents);
-
-// --- Registrations ---
+// Registrations
 router.get('/registrations', getRegistrations);
 
-// --- User Settings ---
+// Events
+router.get('/events', getEvents);
+
+// Settings
 router.get('/settings', getSettings);
+
+// Stats
+router.get('/stats', getStats);
 
 export default router;

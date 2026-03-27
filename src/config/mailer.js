@@ -13,10 +13,11 @@ export const transporter = nodemailer.createTransport({
   },
 });
 
-export const sendEmail = async (to, subject, html) => {
+export const sendEmail = async (to, subject, html, from = null) => {
   try {
+    const defaultFrom = `"Ascendix World Food, AgroTech & Animal Science" <${process.env.MAIL_USER}>`;
     const info = await transporter.sendMail({
-      from: `"Wisvora Scientific" <${process.env.MAIL_USER}>`,
+      from: from || defaultFrom,
       to,
       subject,
       html,

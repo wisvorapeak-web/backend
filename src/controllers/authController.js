@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { supabase } from '../config/supabase.js';
+import User from '../models/User.js';
+import { sendEmail } from '../config/mailer.js';
+import client from '../config/redis.js';
+import { validateEmail, validatePassword } from '../middleware/sanitizationMiddleware.js';
 
 // --- HELPER: Create Auth Token ---
 const generateToken = (id) => {
@@ -9,50 +12,109 @@ const generateToken = (id) => {
   });
 };
 
+// --- HELPER: Generate OTP ---
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// --- HELPER: Store OTP in Redis ---
+const storeOTP = async (email, otp) => {
+  try {
+    // Store OTP with 10-minute expiration
+    await client.setEx(`otp:${email}`, 600, otp);
+    return true;
+  } catch (err) {
+    console.error('Redis OTP Storage Error:', err);
+    return false;
+  }
+};
+
+// --- HELPER: Verify OTP (internal helper) ---
+const verifyStoredOTP = async (email, otp) => {
+  try {
+    const storedOTP = await client.get(`otp:${email}`);
+    if (!storedOTP) {
+      return { valid: false, message: 'OTP expired or not found.' };
+    }
+    if (storedOTP !== otp) {
+      return { valid: false, message: 'Invalid OTP.' };
+    }
+    // Clear OTP after verification
+    await client.del(`otp:${email}`);
+    return { valid: true, message: 'OTP verified successfully.' };
+  } catch (err) {
+    console.error('Redis OTP Verification Error:', err);
+    return { valid: false, message: 'System error verifying OTP.' };
+  }
+};
+
 /**
  * Register new user
  * POST /api/auth/register
  */
 export const register = async (req, res) => {
   try {
-    const { name, email, password, role, institution, location } = req.body;
+    const { name, email, password, confirmPassword, role = 'User', institution, location } = req.body;
 
-    // Check if user already exists in Auth or Users table
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', email)
-      .single();
+    // Validate required fields
+    if (!name || !email || !password || !confirmPassword) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    // Validate email format
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
+
+    // Validate password strength
+    if (!validatePassword(password)) {
+      return res.status(400).json({ 
+        error: 'Password must be at least 8 characters with uppercase, lowercase, number, and special character.' 
+      });
+    }
+
+    // Validate password confirmation
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'Passwords do not match.' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
 
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered.' });
     }
 
-    // Hash the password for manual storage (or let Supabase handle if using Auth)
-    // But since they want "session based JWT auth", we'll manage user records.
-    const hashedPassword = await bcrypt.hash(password, 12);
+    // Create user in MongoDB
+    const user = await User.create({ 
+      firstName: name.split(' ')[0], 
+      lastName: name.split(' ').slice(1).join(' ') || '.', 
+      email, 
+      password, 
+      role: role.toLowerCase(), 
+      isActive: true, // Default to Active
+      registration_info: {
+        institution,
+        country: location
+      }
+    });
 
-    // Create user in Auth (Supabase) + Profile
-    // Or just create in a 'users' table if bypassing Supabase Auth completely.
-    // For now, let's create a record in 'profiles' with a password field.
-    const { data: user, error } = await supabase
-      .from('profiles')
-      .insert([
-        { 
-          full_name: name, 
-          email, 
-          password: hashedPassword, 
-          role, 
-          institution, 
-          location,
-          status: 'Active',
-          created_at: new Date()
-        }
-      ])
-      .select()
-      .single();
+    // Generate OTP for email verification
+    const otp = generateOTP();
+    const otpStored = await storeOTP(email, otp);
 
-    if (error) throw error;
+    if (otpStored) {
+      // Send verification email
+      await sendEmail(
+        email,
+        'Verify Your Email - Wisvora Scientific',
+        `<h1>Welcome to Wisvora Scientific!</h1>
+         <p>Hi ${name},</p>
+         <p>Your OTP for email verification is: <strong>${otp}</strong></p>
+         <p>This OTP will expire in 10 minutes.</p>
+         <p>If you did not register for this account, please ignore this email.</p>`
+      );
+    }
 
     // Generate Token
     const token = generateToken(user.id);
@@ -66,14 +128,15 @@ export const register = async (req, res) => {
     });
 
     res.status(201).json({
-      message: 'Registration successful.',
+      message: 'Registration successful. Please verify your email.',
       user: {
-        id: user.id,
-        name: user.full_name,
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
         email: user.email,
         role: user.role
       },
-      token
+      token,
+      requiresEmailVerification: true
     });
 
   } catch (error) {
@@ -90,21 +153,32 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find User
-    const { data: user, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', email)
-      .single();
+    // Validate required fields
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
 
-    if (!user || error) {
+    // Validate email format
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
+
+    // Find User
+    const user = await User.findOne({ email });
+
+    if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     // Check Password
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(403).json({ error: 'Your account is suspended or inactive.' });
     }
 
     // Generate Token
@@ -121,8 +195,8 @@ export const login = async (req, res) => {
     res.json({
       message: 'Login successful.',
       user: {
-        id: user.id,
-        name: user.full_name,
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
         email: user.email,
         role: user.role
       },
@@ -136,10 +210,272 @@ export const login = async (req, res) => {
 };
 
 /**
+ * Get current logged-in user
+ * GET /api/auth/me
+ */
+export const getMe = async (req, res) => {
+  try {
+    // req.user is already set by authMiddleware
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Not authenticated.' });
+    }
+    res.json({
+      user: {
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: user.role,
+        avatar_url: user.avatar_url || null,
+        isActive: user.isActive
+      }
+    });
+  } catch (error) {
+    console.error('GetMe Error:', error);
+    res.status(500).json({ error: 'Could not fetch user profile.' });
+  }
+};
+
+/**
  * Logout
  * POST /api/auth/logout
  */
 export const logout = async (req, res) => {
-  res.cookie('token', '', { expires: new Date(0), httpOnly: true });
-  res.json({ message: 'Logged out successfully.' });
+  try {
+    res.cookie('token', '', { expires: new Date(0), httpOnly: true });
+    res.json({ message: 'Logged out successfully.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Logout failed.' });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Validate email
+    if (!email || !validateEmail(email)) {
+      return res.status(400).json({ error: 'Valid email is required.' });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      // Don't reveal whether email exists for security
+      return res.status(200).json({ 
+        message: 'If email exists, password reset instructions have been sent.' 
+      });
+    }
+
+    // Generate OTP for password reset
+    const otp = generateOTP();
+    const otpStored = await storeOTP(`password_reset:${email}`, otp);
+
+    if (otpStored) {
+      // Send password reset email with OTP
+      const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/reset-password?email=${encodeURIComponent(email)}`;
+      
+      await sendEmail(
+        email,
+        'Password Reset Request - Wisvora Scientific',
+        `<h1>Password Reset Request</h1>
+         <p>Hi ${user.firstName},</p>
+         <p>You requested a password reset. Your OTP is: <strong>${otp}</strong></p>
+         <p>This OTP will expire in 10 minutes.</p>
+         <p><a href="${resetUrl}">Reset Password</a></p>
+         <p>If you did not request this, please ignore this email.</p>`
+      );
+    }
+
+    res.status(200).json({ 
+      message: 'If email exists, password reset instructions have been sent.' 
+    });
+
+  } catch (error) {
+    console.error('Forgot Password Error:', error);
+    res.status(500).json({ error: 'Could not process password reset request.' });
+  }
+};
+
+/**
+ * Verify OTP for Email or Password Reset
+ * POST /api/auth/verify-otp
+ */
+export const verifyOTP = async (req, res) => {
+  try {
+    const { email, otp, type = 'email' } = req.body; // type: 'email' or 'password_reset'
+
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and OTP are required.' });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
+
+    // Verify OTP
+    const result = await verifyStoredOTP(email, otp);
+    if (!result.valid) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    if (type === 'email') {
+      // Mark email as verified in database (optional for MongoDB User model)
+      await User.findOneAndUpdate({ email }, { isVerified: true });
+
+      res.status(200).json({ message: 'Email verified successfully.' });
+    } else {
+      // For password reset, generate a temporary token
+      const tempToken = jwt.sign(
+        { email, type: 'password_reset' },
+        process.env.JWT_SECRET,
+        { expiresIn: '30m' }
+      );
+
+      res.status(200).json({ 
+        message: 'OTP verified. Proceed to reset password.',
+        resetToken: tempToken
+      });
+    }
+
+  } catch (error) {
+    console.error('OTP Verification Error:', error);
+    res.status(500).json({ error: 'OTP verification failed.' });
+  }
+};
+
+/**
+ * Reset Password with OTP
+ * POST /api/auth/reset-password
+ */
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, resetToken, newPassword, confirmPassword } = req.body;
+
+    // Validate inputs
+    if (!email || !resetToken || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    // Validate email
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
+
+    // Validate new password
+    if (!validatePassword(newPassword)) {
+      return res.status(400).json({ 
+        error: 'Password must be at least 8 characters with uppercase, lowercase, number, and special character.' 
+      });
+    }
+
+    // Validate password match
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'Passwords do not match.' });
+    }
+
+    // Verify reset token
+    try {
+      const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+      if (decoded.type !== 'password_reset' || decoded.email !== email) {
+        return res.status(400).json({ error: 'Invalid reset token.' });
+      }
+    } catch (err) {
+      return res.status(400).json({ error: 'Reset token expired or invalid.' });
+    }
+
+    // Check if new password is same as old password
+    const user = await User.findOne({ email });
+
+    if (user && await bcrypt.compare(newPassword, user.password)) {
+      return res.status(400).json({ error: 'New password must be different from current password.' });
+    }
+
+    // Hash new password
+    // Update password in database
+    user.password = newPassword; 
+    await user.save();
+
+    // Send confirmation email
+    await sendEmail(
+      email,
+      'Password Reset Successful - Wisvora Scientific',
+      `<h1>Password Reset Successful</h1>
+       <p>Your password has been successfully reset.</p>
+       <p>If you did not make this change, please contact support immediately.</p>`
+    );
+
+    res.status(200).json({ message: 'Password reset successfully. Please log in with your new password.' });
+
+  } catch (error) {
+    console.error('Reset Password Error:', error);
+    res.status(500).json({ error: 'Could not reset password.' });
+  }
+};
+
+/**
+ * Resend OTP
+ * POST /api/auth/resend-otp
+ */
+export const resendOTP = async (req, res) => {
+  try {
+    const { email, type = 'email' } = req.body;
+
+    if (!email || !validateEmail(email)) {
+      return res.status(400).json({ error: 'Valid email is required.' });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email });
+
+    if (!user && type === 'email') {
+      return res.status(400).json({ error: 'User not found.' });
+    }
+
+    // Generate and store new OTP
+    const otp = generateOTP();
+    const otpKey = type === 'password_reset' ? `password_reset:${email}` : `otp:${email}`;
+    
+    // Check rate limiting: max 3 resends per hour
+    const resendKey = `resend_count:${otpKey}`;
+    const resendCount = await client.get(resendKey);
+    
+    if (resendCount && parseInt(resendCount) >= 3) {
+      return res.status(429).json({ error: 'Too many OTP resend attempts. Please try again later.' });
+    }
+
+    const otpStored = await storeOTP(email, otp);
+
+    if (otpStored) {
+      // Increment resend counter
+      await client.incr(resendKey);
+      await client.expire(resendKey, 3600); // 1 hour expiry
+
+      // Send email based on type
+      if (type === 'email') {
+        await sendEmail(
+          email,
+          'Email Verification OTP - Wisvora Scientific',
+          `<h1>Email Verification</h1>
+           <p>Your OTP is: <strong>${otp}</strong></p>
+           <p>This OTP will expire in 10 minutes.</p>`
+        );
+      } else {
+        await sendEmail(
+          email,
+          'Password Reset OTP - Wisvora Scientific',
+          `<h1>Password Reset</h1>
+           <p>Your OTP is: <strong>${otp}</strong></p>
+           <p>This OTP will expire in 10 minutes.</p>`
+        );
+      }
+    }
+
+    res.status(200).json({ message: 'OTP has been sent to your email.' });
+
+  } catch (error) {
+    console.error('Resend OTP Error:', error);
+    res.status(500).json({ error: 'Could not resend OTP.' });
+  }
 };

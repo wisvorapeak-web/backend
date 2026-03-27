@@ -1,29 +1,43 @@
 import express from 'express';
-import { register, login, logout } from '../controllers/authController.js';
+import { 
+  register, 
+  login, 
+  logout,
+  getMe,
+  forgotPassword,
+  verifyOTP,
+  resetPassword,
+  resendOTP
+} from '../controllers/authController.js';
+import { authLimiter, passwordResetLimiter } from '../middleware/rateLimitMiddleware.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 // --- PUBLIC AUTH ROUTES ---
 
-/**
- * Register scientific portal member
- * POST /api/auth/register
- */
-router.post('/register', register);
+// Register
+router.post('/register', authLimiter, register);
 
-/**
- * Log in to portal
- * POST /api/auth/login
- */
-router.post('/login', login);
+// Login
+router.post('/login', authLimiter, login);
 
-/**
- * Clear session
- * POST /api/auth/logout
- */
+// Logout
 router.post('/logout', logout);
 
-// User will add Google OAuth logic here (e.g. POST /api/auth/google)
-// ... router.post('/google', googleLogin);
+// Get current user (protected)
+router.get('/me', authMiddleware, getMe);
+
+// Forgot password
+router.post('/forgot-password', passwordResetLimiter, forgotPassword);
+
+// Verify OTP
+router.post('/verify-otp', verifyOTP);
+
+// Reset password
+router.post('/reset-password', passwordResetLimiter, resetPassword);
+
+// Resend OTP
+router.post('/resend-otp', resendOTP);
 
 export default router;

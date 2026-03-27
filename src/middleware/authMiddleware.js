@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { supabase } from '../config/supabase.js';
+import User from '../models/User.js';
 
 /**
  * Middleware to verify local JWT token.
@@ -31,18 +31,14 @@ export const authMiddleware = async (req, res, next) => {
         return res.status(401).json({ error: 'Invalid or malformed session token.' });
      }
 
-     // Find user in Supabase (using id from JWT)
-     const { data: user, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, role, status')
-        .eq('id', decoded.id)
-        .single();
+     // Find user in MongoDB (using id from JWT)
+     const user = await User.findById(decoded.id).select('-password');
 
-     if (error || !user) {
+     if (!user) {
         return res.status(401).json({ error: 'User record not found in system.' });
      }
 
-     if (user.status !== 'Active') {
+     if (!user.isActive) {
         return res.status(403).json({ error: 'Your account is currently suspended or inactive.' });
      }
 
@@ -61,13 +57,49 @@ export const authMiddleware = async (req, res, next) => {
   }
 };
 
+/**
+ * Middleware to verify admin/reviewer role.
+ * Must be used AFTER authMiddleware to have req.user populated.
+ */
 export const adminMiddleware = (req, res, next) => {
-  const adminRoles = ['admin', 'super admin', 'reviewer'];
-  const userRole = req.user?.role?.toLowerCase();
-  
-  if (req.user && adminRoles.includes(userRole)) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+
+    const allowedRoles = ['admin', 'sub-admin', 'judge'];
+    if (!allowedRoles.includes(req.user.role?.toLowerCase())) {
+      return res.status(403).json({ 
+        error: `Access denied. Required role(s): ${allowedRoles.join(', ')}. Your role: ${req.user.role}` 
+      });
+    }
+
     next();
-  } else {
-    res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  } catch (err) {
+    console.error('Admin Middleware Error:', err);
+    res.status(500).json({ error: 'System error during authorization.' });
+  }
+};
+
+/**
+ * Middleware to verify super admin role.
+ * More restrictive than adminMiddleware.
+ */
+export const superAdminMiddleware = (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+
+    if (req.user.role?.toLowerCase() !== 'admin' && req.user.role?.toLowerCase() !== 'sub-admin') {
+      return res.status(403).json({ 
+        error: 'Access denied. Admin privileges required.' 
+      });
+    }
+
+    next();
+  } catch (err) {
+    console.error('Super Admin Middleware Error:', err);
+    res.status(500).json({ error: 'System error during authorization.' });
   }
 };

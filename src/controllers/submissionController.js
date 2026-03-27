@@ -1,30 +1,59 @@
-import { supabase } from '../config/supabase.js';
+import Submission from '../models/Submission.js';
+import Registration from '../models/Registration.js';
+import Topic from '../models/Topic.js';
 import { sendEmail } from '../config/mailer.js';
+import { validateEmail, validateLength, validateRequired, validatePhone } from '../middleware/sanitizationMiddleware.js';
+import crypto from 'crypto';
 
 export const submitContact = async (req, res) => {
     try {
         const { name, email, subject, message } = req.body;
         
-        if (!email || !message) {
-            return res.status(400).json({ error: 'Email and message are required.' });
+        // Validation
+        if (!name || !email || !subject || !message) {
+            return res.status(400).json({ error: 'All fields are required.' });
         }
 
-        const { data, error } = await supabase
-            .from('contacts')
-            .insert([{ name, email, subject, message }]);
+        if (!validateEmail(email)) {
+            return res.status(400).json({ error: 'Invalid email format.' });
+        }
 
-        if (error) throw error;
+        const nameErrors = validateLength(name, 2, 100, 'Name');
+        const subjectErrors = validateLength(subject, 3, 200, 'Subject');
+        const messageErrors = validateLength(message, 10, 5000, 'Message');
+
+        if (nameErrors.length > 0 || subjectErrors.length > 0 || messageErrors.length > 0) {
+            return res.status(400).json({ 
+                error: 'Validation failed',
+                details: [...nameErrors, ...subjectErrors, ...messageErrors]
+            });
+        }
+
+        const submissionId = `CON-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const submission = await Submission.create({ 
+            type: 'contact',
+            firstName: name.split(' ')[0], 
+            lastName: name.split(' ').slice(1).join(' ') || '.', 
+            email: email.toLowerCase(), 
+            subject: subject.trim(), 
+            message: message.trim(),
+            status: 'Pending',
+            submissionId
+        });
 
         // Send confirmation email
         await sendEmail(
             email,
-            'Message Received - Polymers 2026',
-            `<h1>Thank you for contacting us, ${name}!</h1><p>We have received your message regarding "${subject}" and will get back to you shortly.</p>`
+            'Thank You - We Received Your Message - Wisvora Scientific',
+            `<h1>Thank you for contacting us!</h1>
+             <p>Hi ${name},</p>
+             <p>We have received your message regarding "${subject}" and will get back to you within 24-48 hours.</p>
+             <p>Best regards,<br>Wisvora Scientific Team</p>`
         );
 
-        res.status(200).json({ message: 'Message sent successfully.' });
+        res.status(200).json({ message: 'Message sent successfully. We will respond within 24-48 hours.' });
     } catch (error) {
-        console.error('Contact error:', error);
+        console.error('Contact submission error:', error);
         res.status(500).json({ error: 'Failed to submit contact form.' });
     }
 };
@@ -34,34 +63,67 @@ export const submitAbstract = async (req, res) => {
         const { firstName, lastName, email, institution, topic, title, abstract } = req.body;
         const file = req.file;
 
-        if (!email || !title || !abstract) {
-            return res.status(400).json({ error: 'Missing required fields.' });
+        // Validation
+        if (!firstName || !lastName || !email || !topic || !title || !abstract) {
+            return res.status(400).json({ error: 'All required fields must be filled.' });
         }
 
-        const { data, error } = await supabase
-            .from('abstracts')
-            .insert([{ 
-                first_name: firstName, 
-                last_name: lastName, 
-                email, 
-                institution, 
-                topic, 
-                title, 
-                content: abstract,
-                file_url: file ? file.path : null,
-                status: 'pending'
-            }]);
+        if (!validateEmail(email)) {
+            return res.status(400).json({ error: 'Invalid email format.' });
+        }
 
-        if (error) throw error;
+        const nameErrors = [...validateLength(firstName, 2, 50, 'First Name'), ...validateLength(lastName, 2, 50, 'Last Name')];
+        const titleErrors = validateLength(title, 10, 500, 'Title');
+        const abstractErrors = validateLength(abstract, 100, 5000, 'Abstract');
 
-        // Send confirmation
+        if (nameErrors.length > 0 || titleErrors.length > 0 || abstractErrors.length > 0) {
+            return res.status(400).json({ 
+                error: 'Validation failed',
+                details: [...nameErrors, ...titleErrors, ...abstractErrors]
+            });
+        }
+
+        // Validate topic against dynamic Topics collection
+        const existingTopics = await Topic.find({ is_active: true }).select('title');
+        const validTopics = existingTopics.map(t => t.title);
+        if (!validTopics.includes(topic)) {
+            return res.status(400).json({ error: `Invalid topic. Must be one of: ${validTopics.join(', ')}` });
+        }
+
+        const submissionId = `ABS-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const data = await Submission.create({ 
+            type: 'abstract',
+            firstName: firstName.trim(), 
+            lastName: lastName.trim(), 
+            email: email.toLowerCase(), 
+            institution: institution?.trim() || null, 
+            topic, 
+            title: title.trim(), 
+            abstract: abstract.trim(),
+            file_url: file ? file.path : null,
+            status: 'Pending',
+            submissionId
+        });
+
+        // Send confirmation email
         await sendEmail(
             email,
-            'Abstract Submission Confirmation - Polymers 2026',
-            `<h1>Submission Successful</h1><p>Dear ${firstName}, your abstract titled "${title}" has been successfully submitted and is under review.</p>`
+            'Abstract Submission Confirmation - Wisvora Scientific',
+            `<h1>Submission Successful!</h1>
+             <p>Dear ${firstName},</p>
+             <p>Your abstract titled "<strong>${title}</strong>" has been successfully submitted and is now under review.</p>
+             <p><strong>Submission Details:</strong><br>
+             Topic: ${topic}<br>
+             Institution: ${institution || 'N/A'}<br>
+             Submission ID: ${data.submissionId}</p>
+             <p>You will receive updates on the review status via email within 7-10 days.</p>
+             <p>Best regards,<br>Wisvora Scientific Team</p>`
         );
 
-        res.status(200).json({ message: 'Abstract submitted successfully.' });
+        res.status(201).json({ 
+            message: 'Abstract submitted successfully. You will receive updates within 7-10 days.',
+            abstractId: data.submissionId
+        });
     } catch (error) {
         console.error('Abstract submission error:', error);
         res.status(500).json({ error: 'Failed to submit abstract.' });
@@ -70,36 +132,75 @@ export const submitAbstract = async (req, res) => {
 
 export const registerEvent = async (req, res) => {
     try {
-        const { firstName, lastName, email, institution, country, ticketType } = req.body;
+        const { firstName, lastName, email, institution, country, ticketType, phone } = req.body;
 
-        if (!email || !ticketType) {
-            return res.status(400).json({ error: 'Missing required fields.' });
+        // Validation
+        if (!firstName || !lastName || !email || !ticketType) {
+            return res.status(400).json({ error: 'Required fields: firstName, lastName, email, ticketType.' });
         }
 
-        const { data, error } = await supabase
-            .from('registrations')
-            .insert([{ 
-                first_name: firstName, 
-                last_name: lastName, 
-                email, 
-                institution, 
-                country, 
-                ticket_type: ticketType,
-                payment_status: 'pending'
-            }]);
+        if (!validateEmail(email)) {
+            return res.status(400).json({ error: 'Invalid email format.' });
+        }
 
-        if (error) throw error;
+        const nameErrors = [...validateLength(firstName, 2, 50, 'First Name'), ...validateLength(lastName, 2, 50, 'Last Name')];
+        if (nameErrors.length > 0) {
+            return res.status(400).json({ error: 'Validation failed', details: nameErrors });
+        }
 
-        // Send confirmation
+        // Validate country
+        if (!country || country.trim().length < 2) {
+            return res.status(400).json({ error: 'Country is required.' });
+        }
+
+        // Validate phone if provided
+        if (phone && !validatePhone(phone)) {
+            return res.status(400).json({ error: 'Invalid phone number format.' });
+        }
+
+        // Validate ticket type
+        const validTickets = ['Student', 'Delegate', 'Speaker', 'Poster'];
+        if (!validTickets.includes(ticketType)) {
+            return res.status(400).json({ error: `Invalid ticket type. Must be one of: ${validTickets.join(', ')}` });
+        }
+
+        const registrationId = `REG-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const data = await Registration.create({ 
+            firstName: firstName.trim(), 
+            lastName: lastName.trim(), 
+            email: email.toLowerCase(), 
+            institution: institution?.trim() || null, 
+            country: country.trim(),
+            phone: phone?.trim() || null,
+            tier: ticketType,
+            status: 'Pending',
+            registrationId
+        });
+        
+        // No need for error throw as Registration.create will throw if schema fails
+
+        // Send confirmation email
         await sendEmail(
             email,
-            'Event Registration - Polymers 2026',
-            `<h1>Registration Received</h1><p>Welcome ${firstName}! Your registration for ${ticketType} has been received. Please check your dashboard for payment instructions.</p>`
+            'Event Registration Confirmation - Wisvora Scientific',
+            `<h1>Registration Successful!</h1>
+             <p>Hi ${firstName},</p>
+             <p>Your registration for the Wisvora Scientific Platform has been received.</p>
+             <p><strong>Registration Details:</strong><br>
+             Ticket Type: ${ticketType}<br>
+             Institution: ${institution || 'N/A'}<br>
+             Country: ${country}<br>
+             Registration ID: ${data.registrationId}</p>
+             <p>Please proceed to payment to confirm your registration.</p>
+             <p>Best regards,<br>Wisvora Scientific Team</p>`
         );
 
-        res.status(200).json({ message: 'Registration successful.' });
+        res.status(201).json({ 
+            message: 'Registration successful. Please proceed to payment.',
+            registrationId: data.registrationId
+        });
     } catch (error) {
         console.error('Registration error:', error);
-        res.status(500).json({ error: 'Failed to register.' });
+        res.status(500).json({ error: 'Failed to register for event.' });
     }
 };

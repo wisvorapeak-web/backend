@@ -1,20 +1,22 @@
 import express from 'express';
-import { setupSuperAdmin, checkSetupStatus } from '../controllers/setupController.js';
+import { initialSetup, getSetupStatus, syncEventSettings, syncTopics, syncAllData } from '../controllers/setupController.js';
 
 const router = express.Router();
 
-// --- SETUP ROUTES ---
+router.post('/sync-settings', syncEventSettings);
+router.post('/sync-topics', syncTopics);
+router.post('/sync-all', syncAllData);
 
 /**
- * Register primary super admin if none exists
+ * Perform initial system setup (creates first Super Admin)
  * POST /api/setup
  */
-router.post('/', setupSuperAdmin);
+router.post('/', initialSetup);
 
 /**
- * Check if a super admin is already initialized
+ * Check if the system needs initial setup
  * GET /api/setup/status
  */
-router.get('/status', checkSetupStatus);
+router.get('/status', getSetupStatus);
 
 export default router;

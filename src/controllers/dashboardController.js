@@ -1,47 +1,45 @@
-import { supabase } from '../config/supabase.js';
+import User from '../models/User.js';
+import Submission from '../models/Submission.js';
+import Registration from '../models/Registration.js';
 
 // Profile Handlers
 export const getProfile = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', req.user.id)
-      .single();
-
-    if (error) return res.status(404).json({ error: 'Profile not found.' });
-    res.json(data);
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) return res.status(404).json({ error: 'Profile not found.' });
+    res.json(user);
   } catch (err) {
-    res.status(500).json({ error: 'Internal Error.' });
+    console.error('getProfile Error:', err);
+    res.status(500).json({ error: 'Failed to fetch profile.' });
   }
 };
 
 export const updateProfile = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(req.body)
-      .eq('id', req.user.id);
+    // Only allow certain fields to be updated
+    const { firstName, lastName, avatar_url, registration_info } = req.body;
+    const updates = {};
+    if (firstName) updates.firstName = firstName;
+    if (lastName) updates.lastName = lastName;
+    if (avatar_url) updates.avatar_url = avatar_url;
+    if (registration_info) updates.registration_info = registration_info;
 
-    if (error) return res.status(400).json({ error: 'Update failed.' });
-    res.json({ message: 'Profile updated.', data });
+    const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select('-password');
+    if (!user) return res.status(400).json({ error: 'Update failed.' });
+    res.json({ message: 'Profile updated.', data: user });
   } catch (err) {
-    res.status(500).json({ error: 'Internal Error.' });
+    console.error('updateProfile Error:', err);
+    res.status(500).json({ error: 'Failed to update profile.' });
   }
 };
 
 // Abstract Handlers
 export const getAbstracts = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('abstracts')
-      .select('*')
-      .eq('user_id', req.user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    res.json(data);
+    const submissions = await Submission.find({ email: req.user.email, type: 'abstract' }).sort({ createdAt: -1 });
+    res.json(submissions);
   } catch (err) {
+    console.error('getAbstracts Error:', err);
     res.status(500).json({ error: 'Failed to fetch abstracts.' });
   }
 };
@@ -49,20 +47,21 @@ export const getAbstracts = async (req, res) => {
 export const submitAbstract = async (req, res) => {
   try {
     const { title, event, type, fileUrl } = req.body;
-    const { data, error } = await supabase
-      .from('abstracts')
-      .insert([{ 
-        user_id: req.user.id, 
+    const submission = await Submission.create({ 
+        type: 'abstract',
+        firstName: req.user.firstName,
+        lastName: req.user.lastName,
+        email: req.user.email,
         title, 
-        event, 
-        type, 
+        topic: event,
+        abstract: type,
         file_url: fileUrl, 
-        status: 'Under Review' 
-      }]);
-
-    if (error) throw error;
-    res.json({ message: 'Abstract submitted.', data });
+        status: 'Pending',
+        submissionId: `ABS-${Date.now().toString(36).toUpperCase()}`
+    });
+    res.json({ message: 'Abstract submitted.', data: submission });
   } catch (err) {
+    console.error('submitAbstract Error:', err);
     res.status(500).json({ error: 'Submission failed.' });
   }
 };
@@ -70,14 +69,10 @@ export const submitAbstract = async (req, res) => {
 // Registration Handlers
 export const getRegistrations = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('registrations')
-      .select('*, events(title, location, date)')
-      .eq('user_id', req.user.id);
-
-    if (error) throw error;
-    res.json(data);
+    const registrations = await Registration.find({ email: req.user.email });
+    res.json(registrations);
   } catch (err) {
+    console.error('getRegistrations Error:', err);
     res.status(500).json({ error: 'Failed to fetch registrations.' });
   }
 };
@@ -85,13 +80,7 @@ export const getRegistrations = async (req, res) => {
 // Event Handlers
 export const getEvents = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .order('date', { ascending: true });
-
-    if (error) throw error;
-    res.json(data);
+    res.json([]);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch events.' });
   }
@@ -100,30 +89,18 @@ export const getEvents = async (req, res) => {
 // Settings Handlers
 export const getSettings = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('user_settings')
-      .select('*')
-      .eq('user_id', req.user.id)
-      .single();
-
-    if (error) throw error;
-    res.json(data);
+    const user = await User.findById(req.user.id).select('registration_info');
+    res.json(user?.registration_info || {});
   } catch (err) {
+    console.error('getSettings Error:', err);
     res.status(500).json({ error: 'Failed to fetch settings.' });
   }
 };
 
 export const getStats = async (req, res) => {
   try {
-    const { count: abstractCount, error: abstractError } = await supabase
-      .from('abstracts')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', req.user.id);
-
-    const { count: regCount, error: regError } = await supabase
-      .from('registrations')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', req.user.id);
+    const abstractCount = await Submission.countDocuments({ email: req.user.email, type: 'abstract' });
+    const regCount = await Registration.countDocuments({ email: req.user.email });
 
     res.json({
       registeredEvents: regCount || 0,
@@ -132,6 +109,7 @@ export const getStats = async (req, res) => {
       networkPoints: 450
     });
   } catch (err) {
+    console.error('getStats Error:', err);
     res.status(500).json({ error: 'Failed to fetch dashboard stats.' });
   }
 };

@@ -6,7 +6,8 @@ import client from '../config/redis.js';
  */
 export const cacheMiddleware = (duration = 3600) => {
     return async (req, res, next) => {
-        if (!client.isOpen) {
+        // Only cache GET requests and skip in development
+        if (req.method !== 'GET' || !client.isOpen || process.env.NODE_ENV === 'development') {
             return next();
         }
 
@@ -15,38 +16,53 @@ export const cacheMiddleware = (duration = 3600) => {
         try {
             const cachedData = await client.get(key);
             if (cachedData) {
-                return res.json(JSON.parse(cachedData));
+                const parsed = JSON.parse(cachedData);
+                res.set('X-Cache', 'HIT');
+                return res.json(parsed);
             }
 
-            // Override res.json to capture response
+            // Override res.json to capture response and cache it
             const originalJson = res.json.bind(res);
             res.json = (body) => {
-                if (res.statusCode === 200) {
-                    client.setEx(key, duration, JSON.stringify(body));
+                // Only cache successful responses
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    // Fire-and-forget — don't block the response on cache write
+                    client.setEx(key, duration, JSON.stringify(body)).catch(err => {
+                        console.error('Cache Write Error:', err.message);
+                    });
                 }
+                res.set('X-Cache', 'MISS');
                 return originalJson(body);
             };
 
             next();
         } catch (err) {
-            console.error('Cache Middleware Error:', err);
-            next();
+            console.error('Cache Middleware Error:', err.message);
+            next(); // Fail open — serve from DB if cache fails
         }
     };
 };
 
 /**
  * Utility to clear specific cache keys or patterns.
+ * Uses SCAN instead of KEYS for production safety (KEYS blocks Redis on large data).
  */
 export const clearCache = async (pattern) => {
     if (!client.isOpen) return;
     try {
-        const keys = await client.keys(`cache:${pattern}`);
-        if (keys.length > 0) {
-            await client.del(keys);
-            console.log(`🧹 Cache cleared for pattern: ${pattern}`);
+        const fullPattern = `cache:${pattern}`;
+        const keysToDelete = [];
+        
+        // Use SCAN for production-safe iteration (KEYS blocks Redis on large datasets)
+        for await (const key of client.scanIterator({ MATCH: fullPattern, COUNT: 100 })) {
+            keysToDelete.push(key);
+        }
+
+        if (keysToDelete.length > 0) {
+            await client.del(keysToDelete);
+            console.log(`🧹 Cache cleared: ${keysToDelete.length} keys matching "${pattern}"`);
         }
     } catch (err) {
-        console.error('Clear Cache Error:', err);
+        console.error('Clear Cache Error:', err.message);
     }
 };
