@@ -22,7 +22,7 @@ import setupRoutes from './routes/setup.js';
 import paymentRoutes from './routes/payment.js';
 
 // Connect to MongoDB
-connectDB();
+connectDB().catch(err => console.error('Initial DB Connection Error:', err));
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -42,11 +42,35 @@ app.use(sanitizeInput);
 // Apply general rate limiting
 app.use(generalLimiter);
 
+// Ensure DB is connected before handling requests (Serverless optimization)
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        console.error('Critical: Database Connection Failed in Middleware', err.message);
+        // On root endpoint, we might want to still respond with "online" but DB "offline"
+        if (req.path === '/') return next();
+        
+        res.status(503).json({ 
+            error: 'Service Unavailable: Database Connection Failure',
+            message: 'Our systems are experiencing issues connecting to the database.'
+        });
+    }
+});
+
 // Redis client
 import client from './config/redis.js';
 
 // --- ROOT STATUS ENDPOINT ---
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
+  // Ensure we try to connect if not already connected (vital for serverless)
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('DB Connection failure during status check:', err.message);
+  }
+
   res.json({
     status: 'online',
     message: 'Wisvora Scientific Platform API',
