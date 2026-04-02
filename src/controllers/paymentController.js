@@ -180,13 +180,25 @@ const getPaypalAccessToken = async () => {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
     });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`PayPal Auth Failed: ${response.status} - ${errText}`);
+    }
+
     const data = await response.json();
+    if (!data.access_token) throw new Error('PayPal Auth Token missing in response');
     return data.access_token;
 };
 
 export const createPaypalOrder = async (req, res) => {
     try {
         const { amount, currency } = req.body;
+
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ error: 'Amount must be a positive number.' });
+        }
+
         const accessToken = await getPaypalAccessToken();
         
         const response = await fetch(`${process.env.NODE_ENV === 'production' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com'}/v2/checkout/orders`, {
@@ -201,24 +213,34 @@ export const createPaypalOrder = async (req, res) => {
                     {
                         amount: {
                             currency_code: normalizeCurrency(currency),
-                            value: amount.toString(),
+                            value: amount.toFixed(2), // PayPal requires exactly 2 decimal places as string
                         },
                     },
                 ],
             }),
         });
 
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            return res.status(response.status).json({ 
+                error: 'PayPal order creation failed.', 
+                details: errData.message || 'Check your gateway credentials or currency support.' 
+            });
+        }
+
         const order = await response.json();
         res.status(200).json(order);
     } catch (error) {
         console.error('PayPal Order Error:', error);
-        res.status(500).json({ error: 'Failed to create PayPal order.' });
+        res.status(500).json({ error: 'Internal gateway error during PayPal order creation.', details: error.message });
     }
 };
 
 export const capturePaypalOrder = async (req, res) => {
     try {
         const { orderID } = req.body;
+        if (!orderID) return res.status(400).json({ error: 'Order ID is required to capture payment.' });
+
         const accessToken = await getPaypalAccessToken();
 
         const response = await fetch(`${process.env.NODE_ENV === 'production' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com'}/v2/checkout/orders/${orderID}/capture`, {
@@ -229,11 +251,19 @@ export const capturePaypalOrder = async (req, res) => {
             },
         });
 
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            return res.status(response.status).json({ 
+                error: 'PayPal capture failed.', 
+                details: errData.message || 'The payment could not be captured by PayPal.' 
+            });
+        }
+
         const data = await response.json();
         res.status(200).json(data);
     } catch (error) {
         console.error('PayPal Capture Error:', error);
-        res.status(500).json({ error: 'Failed to capture PayPal order.' });
+        res.status(500).json({ error: 'Internal gateway error during PayPal capture.', details: error.message });
     }
 };
 

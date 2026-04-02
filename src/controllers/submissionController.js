@@ -2,32 +2,16 @@ import Submission from '../models/Submission.js';
 import Registration from '../models/Registration.js';
 import Topic from '../models/Topic.js';
 import { sendEmail } from '../config/mailer.js';
-import { validateEmail, validateLength, validateRequired, validatePhone } from '../middleware/sanitizationMiddleware.js';
+import { validateSubmission, sanitizeData } from '../utils/validation.js';
 import crypto from 'crypto';
 
 export const submitContact = async (req, res) => {
     try {
-        const { name, email, subject, message } = req.body;
-        
-        // Validation
-        if (!name || !email || !subject || !message) {
-            return res.status(400).json({ error: 'All fields are required.' });
-        }
+        const { isValid, errors } = validateSubmission('contact', req.body);
+        if (!isValid) return res.status(400).json({ error: 'Validation failed', details: errors });
 
-        if (!validateEmail(email)) {
-            return res.status(400).json({ error: 'Invalid email format.' });
-        }
-
-        const nameErrors = validateLength(name, 2, 100, 'Name');
-        const subjectErrors = validateLength(subject, 3, 200, 'Subject');
-        const messageErrors = validateLength(message, 10, 5000, 'Message');
-
-        if (nameErrors.length > 0 || subjectErrors.length > 0 || messageErrors.length > 0) {
-            return res.status(400).json({ 
-                error: 'Validation failed',
-                details: [...nameErrors, ...subjectErrors, ...messageErrors]
-            });
-        }
+        const sanitized = sanitizeData(req.body);
+        const { name, email, subject, message } = sanitized;
 
         const submissionId = `CON-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
         const submission = await Submission.create({ 
@@ -35,8 +19,8 @@ export const submitContact = async (req, res) => {
             firstName: name.split(' ')[0], 
             lastName: name.split(' ').slice(1).join(' ') || '.', 
             email: email.toLowerCase(), 
-            subject: subject.trim(), 
-            message: message.trim(),
+            subject: subject, 
+            message: message,
             status: 'Pending',
             submissionId
         });
@@ -60,47 +44,31 @@ export const submitContact = async (req, res) => {
 
 export const submitAbstract = async (req, res) => {
     try {
-        const { firstName, lastName, email, institution, topic, category, title, abstract } = req.body;
+        const { isValid, errors } = validateSubmission('abstract', req.body);
+        if (!isValid) return res.status(400).json({ error: 'Validation failed', details: errors });
+
+        const sanitized = sanitizeData(req.body);
+        const { firstName, lastName, email, institution, topic, category, title, abstract } = sanitized;
         const file = req.file;
-
-        // Validation
-        if (!firstName || !lastName || !email || !topic || !category || !title || !abstract) {
-            return res.status(400).json({ error: 'All required fields must be filled.' });
-        }
-
-        if (!validateEmail(email)) {
-            return res.status(400).json({ error: 'Invalid email format.' });
-        }
-
-        const nameErrors = [...validateLength(firstName, 2, 50, 'First Name'), ...validateLength(lastName, 2, 50, 'Last Name')];
-        const titleErrors = validateLength(title, 10, 500, 'Title');
-        const abstractErrors = validateLength(abstract, 100, 5000, 'Abstract');
-
-        if (nameErrors.length > 0 || titleErrors.length > 0 || abstractErrors.length > 0) {
-            return res.status(400).json({ 
-                error: 'Validation failed',
-                details: [...nameErrors, ...titleErrors, ...abstractErrors]
-            });
-        }
 
         // Validate topic against dynamic Topics collection
         const existingTopics = await Topic.find({ is_active: true }).select('title');
         const validTopics = existingTopics.map(t => t.title);
         if (!validTopics.includes(topic)) {
-            return res.status(400).json({ error: `Invalid topic. Must be one of: ${validTopics.join(', ')}` });
+            return res.status(400).json({ error: `Invalid topic selection. Please pick a valid conference topic.` });
         }
 
         const submissionId = `ABS-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
         const data = await Submission.create({ 
             type: 'abstract',
-            firstName: firstName.trim(), 
-            lastName: lastName.trim(), 
+            firstName: firstName, 
+            lastName: lastName, 
             email: email.toLowerCase(), 
-            institution: institution?.trim() || null, 
+            institution: institution || null, 
             topic, 
             category,
-            title: title.trim(), 
-            abstract: abstract.trim(),
+            title: title, 
+            abstract: abstract,
             file_url: file ? file.path : null,
             status: 'Pending',
             submissionId
@@ -128,61 +96,33 @@ export const submitAbstract = async (req, res) => {
         });
     } catch (error) {
         console.error('Abstract submission error:', error);
-        res.status(500).json({ error: 'Failed to submit abstract.' });
+        res.status(500).json({ error: 'Critical failure during abstract submission.' });
     }
 };
 
 export const registerEvent = async (req, res) => {
     try {
-        const { firstName, lastName, email, institution, country, ticketType, phone } = req.body;
+        const { isValid, errors } = validateSubmission('registration', req.body);
+        if (!isValid) return res.status(400).json({ error: 'Validation failed', details: errors });
 
-        // Validation
-        if (!firstName || !lastName || !email || !ticketType) {
-            return res.status(400).json({ error: 'Required fields: firstName, lastName, email, ticketType.' });
-        }
-
-        if (!validateEmail(email)) {
-            return res.status(400).json({ error: 'Invalid email format.' });
-        }
-
-        const nameErrors = [...validateLength(firstName, 2, 50, 'First Name'), ...validateLength(lastName, 2, 50, 'Last Name')];
-        if (nameErrors.length > 0) {
-            return res.status(400).json({ error: 'Validation failed', details: nameErrors });
-        }
-
-        // Validate country
-        if (!country || country.trim().length < 2) {
-            return res.status(400).json({ error: 'Country is required.' });
-        }
-
-        // Validate phone if provided
-        if (phone && !validatePhone(phone)) {
-            return res.status(400).json({ error: 'Invalid phone number format.' });
-        }
-
-        // Validate ticket type
-        const validTickets = ['Student', 'Delegate', 'Speaker', 'Poster'];
-        if (!validTickets.includes(ticketType)) {
-            return res.status(400).json({ error: `Invalid ticket type. Must be one of: ${validTickets.join(', ')}` });
-        }
+        const sanitized = sanitizeData(req.body);
+        const { firstName, lastName, email, institution, country, tier, phone } = sanitized;
 
         const registrationId = `REG-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
         const data = await Registration.create({ 
-            firstName: firstName.trim(), 
-            lastName: lastName.trim(), 
+            firstName, 
+            lastName, 
             email: email.toLowerCase(), 
-            institution: institution?.trim() || null, 
-            country: country.trim(),
-            phone: phone?.trim() || null,
-            tier: ticketType,
+            institution: institution || null, 
+            country,
+            phone: phone || null,
+            tier,
             status: 'Pending',
             registrationId
         });
         
-        // No need for error throw as Registration.create will throw if schema fails
-
         // Send confirmation email
-        const paymentUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/registration/${ticketType.toLowerCase()}?regId=${data.registrationId}`;
+        const paymentUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/registration/${tier.toLowerCase()}?regId=${data.registrationId}`;
 
         await sendEmail(
             email,
@@ -191,7 +131,7 @@ export const registerEvent = async (req, res) => {
              <p>Hi ${firstName},</p>
              <p>Your registration for the Wisvora Scientific Platform has been received.</p>
              <p><strong>Registration Details:</strong><br>
-             Ticket Type: ${ticketType}<br>
+             Ticket Type: ${tier}<br>
              Institution: ${institution || 'N/A'}<br>
              Country: ${country}<br>
              Registration ID: ${data.registrationId}</p>

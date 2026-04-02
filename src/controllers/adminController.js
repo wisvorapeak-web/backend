@@ -20,7 +20,8 @@ import ImportantDate from '../models/ImportantDate.js';
 import FailedPayment from '../models/FailedPayment.js';
 import crypto from 'crypto';
 import { sendEmail } from '../config/mailer.js';
-import { clearCache } from '../middleware/cacheMiddleware.js';
+import { validateSubmission, sanitizeData } from '../utils/validation.js';
+import validator from 'validator';
 
 // --- GENERIC CONTENT CRUD (Used for multiple assets) ---
 const createCrudSet = (Model, label) => ({
@@ -78,11 +79,43 @@ export const updateTravelInfo = travelCrud.update;
 export const deleteTravelInfo = travelCrud.delete;
 
 // Venue Gallery Handlers
-const venueGalleryCrud = createCrudSet(VenueGallery, 'VenueGallery');
-export const getAllVenueGallery = venueGalleryCrud.getAll;
-export const createVenueGallery = venueGalleryCrud.create;
-export const updateVenueGallery = venueGalleryCrud.update;
-export const deleteVenueGallery = venueGalleryCrud.delete;
+export const getAllVenueGallery = async (req, res) => {
+    try { res.status(200).json(await VenueGallery.find().sort({ display_order: 1, createdAt: -1 })); }
+    catch (err) { res.status(500).json({ error: 'Failed to fetch venue gallery' }); }
+};
+
+export const createVenueGallery = async (req, res) => {
+    try {
+        const { image_url, caption, category } = req.body;
+        
+        if (!image_url || !validator.isURL(image_url)) return res.status(400).json({ error: 'A valid image URL is required for the gallery.' });
+        if (!caption || validator.isEmpty(caption.trim())) return res.status(400).json({ error: 'Caption is required.' });
+        if (!category || validator.isEmpty(category.trim())) return res.status(400).json({ error: 'Category is required (e.g., Venue, Lobby, Destination).' });
+
+        const data = await VenueGallery.create(req.body);
+        await clearCache('*');
+        res.status(201).json(data);
+    } catch (err) {
+        console.error('Gallery Create Error:', err);
+        res.status(500).json({ error: `Failed to create gallery item: ${err.message}` });
+    }
+};
+
+export const updateVenueGallery = async (req, res) => {
+    try {
+        const data = await VenueGallery.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        await clearCache('*');
+        res.status(200).json(data);
+    } catch (err) { res.status(500).json({ error: 'Failed to update gallery item' }); }
+};
+
+export const deleteVenueGallery = async (req, res) => {
+    try {
+        await VenueGallery.findByIdAndDelete(req.params.id);
+        await clearCache('*');
+        res.status(200).json({ message: 'Gallery item removed.' });
+    } catch (err) { res.status(500).json({ error: 'Failed to remove gallery item' }); }
+};
 
 export const getVenueSettings = async (req, res) => {
     try {
@@ -640,7 +673,19 @@ export const getAllSpeakers = async (req, res) => {
     catch (err) { res.status(500).json({ error: 'Failed to fetch speakers.' }); }
 };
 export const createSpeaker = async (req, res) => {
-    try { const data = await Speaker.create(req.body); await clearCache('*'); res.status(201).json(data); }
+    try { 
+        const { name, university, country, image_url, category } = req.body;
+        
+        // Validation
+        if (!name || validator.isEmpty(name.trim())) return res.status(400).json({ error: 'Speaker name is required.' });
+        if (!university || validator.isEmpty(university.trim())) return res.status(400).json({ error: 'University/Institution is required.' });
+        if (!country || validator.isEmpty(country.trim())) return res.status(400).json({ error: 'Country is required.' });
+        if (!image_url || !validator.isURL(image_url)) return res.status(400).json({ error: 'A valid image URL is required.' });
+
+        const data = await Speaker.create(req.body); 
+        await clearCache('*'); 
+        res.status(201).json(data); 
+    }
     catch (err) { 
         console.error('Speaker Create Terminal Collision:', err);
         res.status(500).json({ error: `Failed to create speaker: ${err.message}` }); 
