@@ -25,7 +25,7 @@ export const csvMiddleware = csvUpload.single('csv');
  */
 export const sendBulkEmail = async (req, res) => {
     try {
-        const { subject, content, fromName } = req.body;
+        const { subject, content, fromName, fromEmail } = req.body;
 
         if (!subject || !content) {
             return res.status(400).json({ error: 'Subject and content are required.' });
@@ -99,6 +99,7 @@ export const sendBulkEmail = async (req, res) => {
         const BATCH_SIZE = 5;
         const results = { sent: 0, failed: 0, failedEmails: [] };
         const senderName = fromName || 'Ascendix World Food, AgroTech & Animal Science';
+        const senderEmail = fromEmail || 'info@foodagriexpo.com';
 
         for (let i = 0; i < validRecipients.length; i += BATCH_SIZE) {
             const batch = validRecipients.slice(i, i + BATCH_SIZE);
@@ -127,7 +128,7 @@ export const sendBulkEmail = async (req, res) => {
                         recipient.email, 
                         subject, 
                         htmlBody,
-                        `"${senderName}" <info@foodagriexpo.com>`
+                        `"${senderName}" <${senderEmail}>`
                     );
                     
                     if (success) {

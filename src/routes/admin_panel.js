@@ -17,7 +17,7 @@ import {
     updateUserStatus,
     replyToMessage,
     deleteMessage,
-    sendBulkEmail,
+    // sendBulkEmail, // Moved to bulkEmailController
     getAllTopics, createTopic, updateTopic, deleteTopic,
     getAllSpeakers, createSpeaker, updateSpeaker, deleteSpeaker,
     getAllSponsors, createSponsor, updateSponsor, deleteSponsor,
@@ -36,6 +36,7 @@ import {
     getAllImportantDates, createImportantDate, updateImportantDate, deleteImportantDate,
     getAllFailedPayments, updateFailedPaymentStatus, deleteFailedPayment
 } from '../controllers/adminController.js';
+import { sendBulkEmail, csvMiddleware } from '../controllers/bulkEmailController.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -149,7 +150,7 @@ router.delete('/dates/:id', deleteImportantDate);
 
 
 // --- BULK EMAIL DISPATCH ---
-router.post('/bulk-email', upload.single('csv'), sendBulkEmail);
+router.post('/bulk-email', csvMiddleware, sendBulkEmail);
 
 // --- FAILED PAYMENTS ---
 router.get('/failed-payments', getAllFailedPayments);
