@@ -60,11 +60,11 @@ export const submitContact = async (req, res) => {
 
 export const submitAbstract = async (req, res) => {
     try {
-        const { firstName, lastName, email, institution, topic, title, abstract } = req.body;
+        const { firstName, lastName, email, institution, topic, category, title, abstract } = req.body;
         const file = req.file;
 
         // Validation
-        if (!firstName || !lastName || !email || !topic || !title || !abstract) {
+        if (!firstName || !lastName || !email || !topic || !category || !title || !abstract) {
             return res.status(400).json({ error: 'All required fields must be filled.' });
         }
 
@@ -98,6 +98,7 @@ export const submitAbstract = async (req, res) => {
             email: email.toLowerCase(), 
             institution: institution?.trim() || null, 
             topic, 
+            category,
             title: title.trim(), 
             abstract: abstract.trim(),
             file_url: file ? file.path : null,
@@ -114,6 +115,7 @@ export const submitAbstract = async (req, res) => {
              <p>Your abstract titled "<strong>${title}</strong>" has been successfully submitted and is now under review.</p>
              <p><strong>Submission Details:</strong><br>
              Topic: ${topic}<br>
+             Category: ${category}<br>
              Institution: ${institution || 'N/A'}<br>
              Submission ID: ${data.submissionId}</p>
              <p>You will receive updates on the review status via email within 7-10 days.</p>
@@ -180,9 +182,11 @@ export const registerEvent = async (req, res) => {
         // No need for error throw as Registration.create will throw if schema fails
 
         // Send confirmation email
+        const paymentUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/registration/${ticketType.toLowerCase()}?regId=${data.registrationId}`;
+
         await sendEmail(
             email,
-            'Event Registration Confirmation - Wisvora Scientific',
+            'Event Registration Confirmation - ASFAA-2026',
             `<h1>Registration Successful!</h1>
              <p>Hi ${firstName},</p>
              <p>Your registration for the Wisvora Scientific Platform has been received.</p>
@@ -191,7 +195,12 @@ export const registerEvent = async (req, res) => {
              Institution: ${institution || 'N/A'}<br>
              Country: ${country}<br>
              Registration ID: ${data.registrationId}</p>
-             <p>Please proceed to payment to confirm your registration.</p>
+             <p><strong>Next Step:</strong> Please proceed to our secure payment gateway to confirm your seat:</p>
+             <div style="margin: 30px 0;">
+                <a href="${paymentUrl}" style="display: inline-block; padding: 14px 28px; color: white; background-color: #3898ec; text-decoration: none; border-radius: 8px; font-weight: bold;">Complete Secure Payment</a>
+             </div>
+             <p>If the button doesn't work, copy and paste this URL into your browser:</p>
+             <p>${paymentUrl}</p>
              <p>Best regards,<br>Wisvora Scientific Team</p>`
         );
 

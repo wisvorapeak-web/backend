@@ -17,6 +17,7 @@ import VenueGallery from '../models/VenueGallery.js';
 import Invitation from '../models/Invitation.js';
 import Session from '../models/Session.js';
 import ImportantDate from '../models/ImportantDate.js';
+import FailedPayment from '../models/FailedPayment.js';
 import crypto from 'crypto';
 import { sendEmail } from '../config/mailer.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
@@ -481,6 +482,8 @@ export const getAdminStats = async (req, res) => {
         const registrationsCount = await Registration.countDocuments();
         const sponsorsCount = await Sponsor.countDocuments();
         const speakersCount = await Speaker.countDocuments();
+        const failedPaymentsCount = await FailedPayment.countDocuments();
+        const pendingFailedPayments = await FailedPayment.countDocuments({ follow_up_status: 'Pending' });
 
         const registrations = await Registration.find().select('amount payment_status');
         const revenue = (registrations || []).reduce((acc, reg) => {
@@ -524,7 +527,9 @@ export const getAdminStats = async (req, res) => {
             totalRevenue: `$${revenue.toLocaleString()}`,
             abstractStatusBreakdown: statusBreakdown,
             recentInquiries: recentInquiries || [],
-            registrationChartData: chartData.map(v => Math.max(v * 20, 10))
+            registrationChartData: chartData.map(v => Math.max(v * 20, 10)),
+            failedPayments: failedPaymentsCount,
+            pendingFailedPayments: pendingFailedPayments
         });
     } catch (error) {
         console.error('Admin Stats Error:', error);
@@ -636,11 +641,17 @@ export const getAllSpeakers = async (req, res) => {
 };
 export const createSpeaker = async (req, res) => {
     try { const data = await Speaker.create(req.body); await clearCache('*'); res.status(201).json(data); }
-    catch (err) { res.status(500).json({ error: 'Failed to create speaker.' }); }
+    catch (err) { 
+        console.error('Speaker Create Terminal Collision:', err);
+        res.status(500).json({ error: `Failed to create speaker: ${err.message}` }); 
+    }
 };
 export const updateSpeaker = async (req, res) => {
     try { const data = await Speaker.findByIdAndUpdate(req.params.id, req.body, { new: true }); await clearCache('*'); res.status(200).json(data); }
-    catch (err) { res.status(500).json({ error: 'Failed to update speaker.' }); }
+    catch (err) { 
+        console.error('Speaker Update Terminal Collision:', err);
+        res.status(500).json({ error: `Failed to update speaker: ${err.message}` }); 
+    }
 };
 export const deleteSpeaker = async (req, res) => {
     try { await Speaker.findByIdAndDelete(req.params.id); await clearCache('*'); res.status(200).json({ message: 'Speaker deleted.' }); }
@@ -714,3 +725,55 @@ export const getAllImportantDates = importantDateCrud.getAll;
 export const createImportantDate = importantDateCrud.create;
 export const updateImportantDate = importantDateCrud.update;
 export const deleteImportantDate = importantDateCrud.delete;
+
+// === FAILED PAYMENT MANAGEMENT ===
+
+export const getAllFailedPayments = async (req, res) => {
+    try {
+        const failedPayments = await FailedPayment.find()
+            .populate('followed_up_by', 'firstName lastName email')
+            .sort({ createdAt: -1 });
+        res.status(200).json(failedPayments);
+    } catch (err) {
+        console.error('Fetch Failed Payments Error:', err);
+        res.status(500).json({ error: 'Failed to fetch failed payments.' });
+    }
+};
+
+export const updateFailedPaymentStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { follow_up_status, follow_up_notes } = req.body;
+
+        const validStatuses = ['Pending', 'Contacted', 'Resolved', 'Abandoned'];
+        if (follow_up_status && !validStatuses.includes(follow_up_status)) {
+            return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+        }
+
+        const updateData = {};
+        if (follow_up_status) updateData.follow_up_status = follow_up_status;
+        if (follow_up_notes !== undefined) updateData.follow_up_notes = follow_up_notes;
+        updateData.followed_up_by = req.user?._id || req.user?.id;
+        updateData.followed_up_at = new Date();
+
+        const record = await FailedPayment.findByIdAndUpdate(id, updateData, { new: true });
+        if (!record) return res.status(404).json({ error: 'Failed payment record not found.' });
+
+        await clearCache('*');
+        res.status(200).json(record);
+    } catch (err) {
+        console.error('Update Failed Payment Error:', err);
+        res.status(500).json({ error: 'Failed to update failed payment.' });
+    }
+};
+
+export const deleteFailedPayment = async (req, res) => {
+    try {
+        await FailedPayment.findByIdAndDelete(req.params.id);
+        await clearCache('*');
+        res.status(200).json({ message: 'Failed payment record removed.' });
+    } catch (err) {
+        console.error('Delete Failed Payment Error:', err);
+        res.status(500).json({ error: 'Failed to delete failed payment record.' });
+    }
+};

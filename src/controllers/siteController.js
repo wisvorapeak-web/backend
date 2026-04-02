@@ -13,6 +13,7 @@ import Metric from '../models/Metric.js';
 import TravelInfo from '../models/TravelInfo.js';
 import Session from '../models/Session.js';
 import ImportantDate from '../models/ImportantDate.js';
+import Registration from '../models/Registration.js';
 
 // Helper: safely fetch a SiteSetting by key and return its value
 const fetchSetting = async (key, fallback = []) => {
@@ -57,9 +58,31 @@ export const getSiteSettings = async (req, res) => {
 
 export const getSpeakers = async (req, res) => {
     try {
-        const speakers = await Speaker.find({ is_active: true }).sort({ display_order: 1 });
-        res.status(200).json(speakers);
+        // Find speakers that are either active or don't have the flag yet (legacy)
+        const speakers = await Speaker.find({ is_active: { $ne: false } }).sort({ display_order: 1 });
+        
+        // Map legacy data to ensure frontend consistency
+        const mapped = speakers.map(s => {
+            const obj = s.toObject();
+            const rawCategory = obj.category || obj.type || 'Regular';
+            // Normalize category to ensure it matches the frontend's capitalized tabs
+            const normalizedCategory = typeof rawCategory === 'string' 
+                ? rawCategory.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+                : 'Regular';
+
+            return {
+                id: obj._id,
+                ...obj,
+                category: normalizedCategory,
+                university: obj.university || obj.institution || 'Global Hub',
+                image_url: obj.image_url || obj.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${obj.name}`
+            };
+        });
+
+        console.log(`[SiteData] Dispatched ${mapped.length} speakers to public interface.`);
+        res.status(200).json(mapped);
     } catch (error) {
+        console.error('getSpeakers sync error:', error);
         res.status(500).json({ error: 'Failed to fetch speakers.' });
     }
 };
@@ -226,5 +249,16 @@ export const getTravelInfo = async (req, res) => {
         res.status(200).json(info);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch travel info.' });
+    }
+};
+export const getRegistrationById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const reg = await Registration.findOne({ registrationId: id }).select('-__v');
+        if (!reg) return res.status(404).json({ error: 'Registration record not found.' });
+        res.status(200).json(reg);
+    } catch (error) {
+        console.error('getRegistrationById Error:', error);
+        res.status(500).json({ error: 'Failed to retrieve registration details.' });
     }
 };

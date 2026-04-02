@@ -33,7 +33,8 @@ import {
     getAllVenueGallery, createVenueGallery, deleteVenueGallery,
     inviteUser, getAllInvitations, revokeInvitation,
     getAllSessions, createSession, updateSession, deleteSession,
-    getAllImportantDates, createImportantDate, updateImportantDate, deleteImportantDate
+    getAllImportantDates, createImportantDate, updateImportantDate, deleteImportantDate,
+    getAllFailedPayments, updateFailedPaymentStatus, deleteFailedPayment
 } from '../controllers/adminController.js';
 
 const router = express.Router();
@@ -149,5 +150,10 @@ router.delete('/dates/:id', deleteImportantDate);
 
 // --- BULK EMAIL DISPATCH ---
 router.post('/bulk-email', upload.single('csv'), sendBulkEmail);
+
+// --- FAILED PAYMENTS ---
+router.get('/failed-payments', getAllFailedPayments);
+router.patch('/failed-payments/:id', updateFailedPaymentStatus);
+router.delete('/failed-payments/:id', deleteFailedPayment);
 
 export default router;

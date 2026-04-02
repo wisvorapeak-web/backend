@@ -13,7 +13,9 @@ const registrationSchema = new mongoose.Schema({
     amount: { type: Number, default: 0 },
     transaction_id: { type: String },
     payment_method: { type: String },
-    registrationId: { type: String, unique: true }
+    registrationId: { type: String, unique: true },
+    accommodation: { type: String },
+    guest_addon: { type: Boolean, default: false }
 }, { 
     timestamps: true,
     toJSON: { virtuals: true },

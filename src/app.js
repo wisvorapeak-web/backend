@@ -154,13 +154,13 @@ app.post('/api/upload', (req, res, next) => {
       size: req.file?.size
     });
     
-    // Fallback for memoryStorage
-    const fileUrl = req.file.path || `data:${req.file.mimetype};base64,${req.file.buffer?.toString('base64').substring(0, 50)}...`;
+    // Use path from CloudinaryStorage
+    const fileUrl = req.file.path;
     
     res.json({ 
       message: 'Transmission Successful', 
       url: fileUrl, 
-      id: req.file.filename || `tmp-${Date.now()}`
+      id: req.file.filename || `asset-${Date.now()}`
     });
   } catch (error) {
     console.error('Terminal Pipeline Collision:', error);

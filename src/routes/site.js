@@ -19,7 +19,8 @@ import {
   getMetrics,
   getHeroConfig,
   getTravelInfo,
-  getChairs
+  getChairs,
+  getRegistrationById
 } from '../controllers/siteController.js';
 import { cacheMiddleware } from '../middleware/cacheMiddleware.js';
 
@@ -36,8 +37,8 @@ router.get('/hero', cacheMiddleware(3600), getHeroConfig);
 // About
 router.get('/about-highlights', cacheMiddleware(3600), getAboutHighlights);
 
-// Speakers
-router.get('/speakers', cacheMiddleware(3600), getSpeakers);
+// Speakers (Direct fetch for category sync)
+router.get('/speakers', getSpeakers);
 
 // Topics
 router.get('/topics', cacheMiddleware(3600), getTopics);
@@ -77,5 +78,8 @@ router.get('/legal/:slug', cacheMiddleware(3600), getLegalBySlug);
 
 // Brochures
 router.get('/brochures', cacheMiddleware(3600), getBrochures);
+
+// Registration Lookup
+router.get('/registration/:id', getRegistrationById);
 
 export default router;

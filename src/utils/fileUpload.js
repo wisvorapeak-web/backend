@@ -5,20 +5,29 @@ import cloudinary from '../config/cloudinary.js';
 // Define allowed file types and max size
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'application/pdf'];
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'pdf'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_FILE_SIZE_READABLE = '10MB';
+const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
+const MAX_FILE_SIZE_READABLE = '30MB';
 
 // Custom file filter for validation
 const fileFilter = (req, file, cb) => {
+  const ext = file.originalname.split('.').pop()?.toLowerCase();
+  
+  console.log('File Upload Filter Triggered:', {
+    mimetype: file.mimetype,
+    originalname: file.originalname,
+    extension: ext
+  });
+
   // Check content type
   if (!ALLOWED_TYPES.includes(file.mimetype)) {
+    console.error('File Upload Type Rejection:', { fileType: file.mimetype, allowed: ALLOWED_TYPES });
     return cb(new Error(`Invalid file type. Allowed types: ${ALLOWED_EXTENSIONS.join(', ')}`));
   }
 
   // Check filename extension
-  const ext = file.originalname.split('.').pop()?.toLowerCase();
   if (!ALLOWED_EXTENSIONS.includes(ext)) {
-    return cb(new Error(`Invalid file extension. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`));
+    console.error('File Upload Extension Rejection:', { ext, allowed: ALLOWED_EXTENSIONS });
+    return cb(new Error(`Invalid file extension (.${ext}). Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`));
   }
 
   // File name length validation
@@ -40,15 +49,15 @@ const storage = new CloudinaryStorage({
       folder = 'wisvora_scientific/abstracts';
     }
 
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const publicId = `${file.fieldname}-${uniqueSuffix}-${safeName.split('.')[0]}`;
+
     return {
       folder: folder,
       allowed_formats: ALLOWED_EXTENSIONS,
       resource_type: 'auto',
-      public_id: (req, file) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-        return `${file.fieldname}-${uniqueSuffix}-${safeName.split('.')[0]}`;
-      }
+      public_id: publicId
     };
   },
 });
@@ -57,9 +66,8 @@ const storage = new CloudinaryStorage({
  * File upload middleware with validation
  * Usage: upload.single('fieldName') or upload.array('fieldName', limit)
  */
-// FOR DEBUGGING ONLY: Switch to memory storage to isolate Cloudinary issues
 export const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: storage,
   limits: {
     fileSize: MAX_FILE_SIZE
   },
@@ -83,9 +91,14 @@ export const handleUploadError = (err, req, res, next) => {
         error: `File too large. Maximum size: ${MAX_FILE_SIZE_READABLE}` 
       });
     }
-    return res.status(400).json({ error: `Upload error: ${err.message}` });
+    return res.status(400).json({ error: `Upload error (${err.code}): ${err.message}` });
   } else if (err) {
-    return res.status(400).json({ error: err.message || 'File upload failed.' });
+    // Check if it's a Cloudinary specific error
+    const errorMessage = err.message || 'File upload failed.';
+    return res.status(400).json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
   next();
 };
@@ -98,7 +111,8 @@ export const validateFileUpload = (req, res, next) => {
   });
   
   if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded.' });
+    console.error('Validation Failure: req.file is missing after Multer middleware');
+    return res.status(400).json({ error: 'No file uploaded or file rejected by server configurations.' });
   }
 
   // Additional validation: only if not memoryStorage but we check path presence if expected

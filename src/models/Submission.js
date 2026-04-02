@@ -11,6 +11,7 @@ const submissionSchema = new mongoose.Schema({
     subject: { type: String },     // For contact
     message: { type: String },     // For contact
     topic: { type: String },       // For abstract
+    category: { type: String },    // For abstract (e.g. Plenary, Keynote, etc.)
     title: { type: String },       // For abstract
     abstract: { type: String },    // For abstract
     file_url: { type: String },    // For abstract
