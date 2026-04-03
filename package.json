@@ -24,7 +24,8 @@
     "redis": "^5.11.0",
     "stripe": "^20.4.1",
     "validator": "^13.11.0",
-    "xss": "^1.0.14"
+    "xss": "^1.0.14",
+    "csv-parse": "^6.2.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

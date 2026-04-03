@@ -20,6 +20,7 @@ import siteRoutes from './routes/site.js';
 import adminPanelRoutes from './routes/admin_panel.js';
 import setupRoutes from './routes/setup.js';
 import paymentRoutes from './routes/payment.js';
+import client from './config/redis.js';
 
 // Connect to MongoDB
 connectDB().catch(err => console.error('Initial DB Connection Error:', err));
@@ -59,8 +60,6 @@ app.use(async (req, res, next) => {
     }
 });
 
-// Redis client
-import client from './config/redis.js';
 
 // --- ROOT STATUS ENDPOINT ---
 app.get('/', async (req, res) => {
@@ -208,12 +207,11 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found.' });
 });
 
-// --- START SERVER ---
-app.listen(PORT, async () => {
+// --- START SERVER (Local only) ---
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(PORT, async () => {
     console.log(`🚀 Wisvora Backend running on http://localhost:${PORT}`);
     
-    // Database connectivity will be logged by connectDB()
-
     // Check Cloudinary Connectivity
     try {
         const result = await cloudinary.api.ping();
@@ -230,6 +228,7 @@ app.listen(PORT, async () => {
     } else {
         console.warn('⚠️ Redis Connection: Check status');
     }
-});
+  });
+}
 
 export default app;

@@ -20,6 +20,7 @@ import ImportantDate from '../models/ImportantDate.js';
 import FailedPayment from '../models/FailedPayment.js';
 import crypto from 'crypto';
 import { sendEmail } from '../config/mailer.js';
+import { clearCache } from '../middleware/cacheMiddleware.js';
 import { validateSubmission, sanitizeData } from '../utils/validation.js';
 import validator from 'validator';
 
