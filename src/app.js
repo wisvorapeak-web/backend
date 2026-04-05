@@ -34,7 +34,10 @@ app.use(cors({
         process.env.CLIENT_URL,
         'http://localhost:5173',
         'https://www.foodagriexpo.com',
-        'https://foodagriexpo.com'
+        'https://foodagriexpo.com',
+        'https://api.foodagriexpo.com',
+        'https://api.foodagriexpo.com'
+
     ].filter(Boolean),
     credentials: true
 }));
