@@ -20,7 +20,8 @@ import {
   getHeroConfig,
   getTravelInfo,
   getChairs,
-  getRegistrationById
+  getRegistrationById,
+  getOfferByToken
 } from '../controllers/siteController.js';
 import { cacheMiddleware } from '../middleware/cacheMiddleware.js';
 
@@ -81,5 +82,8 @@ router.get('/brochures', cacheMiddleware(3600), getBrochures);
 
 // Registration Lookup
 router.get('/registration/:id', getRegistrationById);
+
+// Payment Offer Lookup
+router.get('/offers/:token', getOfferByToken);
 
 export default router;

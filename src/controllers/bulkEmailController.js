@@ -54,6 +54,10 @@ export const sendBulkEmail = async (req, res) => {
             return res.status(400).json({ error: 'CSV file is empty or has no valid rows.' });
         }
 
+        if (records.length > 300) {
+            return res.status(400).json({ error: `Maximum allowed is 300 recipients per batch. You uploaded ${records.length}.` });
+        }
+
         // Validate columns
         const firstRow = records[0];
         if (!firstRow.name && !firstRow.Name) {
@@ -120,6 +124,12 @@ export const sendBulkEmail = async (req, res) => {
                     const htmlBody = layout(`
                         <h2 style="color: #00113a;">${subject}</h2>
                         <p>Dear ${recipient.name},</p>
+                        
+                        <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; border: 1px solid #e2e8f0;">
+                            <p style="color: #00113a; font-size: 14px; font-weight: bold; margin-top: 0; text-transform: uppercase; letter-spacing: 1px;">Countdown to ASFAA-2026</p>
+                            <img src="https://gen.sendtric.com/countdown/v1?to=1794963600&bg=f8fafc&fg=00113a&days=1&lang=en" style="display: block; margin: 0 auto; max-width: 100%; height: auto;" alt="Countdown to Summit" />
+                        </div>
+
                         <div style="white-space: pre-line; line-height: 1.8;">
                             ${personalizedContent}
                         </div>

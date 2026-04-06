@@ -34,7 +34,8 @@ import {
     inviteUser, getAllInvitations, revokeInvitation,
     getAllSessions, createSession, updateSession, deleteSession,
     getAllImportantDates, createImportantDate, updateImportantDate, deleteImportantDate,
-    getAllFailedPayments, updateFailedPaymentStatus, deleteFailedPayment
+    getAllFailedPayments, updateFailedPaymentStatus, deleteFailedPayment,
+    getAllOffers, createOffer, deleteOffer
 } from '../controllers/adminController.js';
 import { sendBulkEmail, csvMiddleware } from '../controllers/bulkEmailController.js';
 
@@ -156,5 +157,10 @@ router.post('/bulk-email', csvMiddleware, sendBulkEmail);
 router.get('/failed-payments', getAllFailedPayments);
 router.patch('/failed-payments/:id', updateFailedPaymentStatus);
 router.delete('/failed-payments/:id', deleteFailedPayment);
+
+// --- OFFERS ---
+router.get('/offers', getAllOffers);
+router.post('/offers', createOffer);
+router.delete('/offers/:id', deleteOffer);
 
 export default router;

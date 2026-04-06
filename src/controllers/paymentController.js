@@ -148,6 +148,17 @@ export const recordTransaction = async (req, res) => {
     });
 
     if (status === 'Completed' || status === 'captured') {
+        // Special Offer Payment Completion Sync
+        if (billing_details && billing_details.offer_token) {
+            try {
+                const Offer = (await import('../models/Offer.js')).default;
+                await Offer.findOneAndUpdate(
+                    { token: billing_details.offer_token },
+                    { status: 'Paid' }
+                );
+            } catch(e) { console.error('Failed to sync offer status:', e); }
+        }
+
         registration.payment_status = 'Paid';
         registration.transaction_id = payment_id;
         registration.payment_method = method;

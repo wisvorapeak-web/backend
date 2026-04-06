@@ -18,6 +18,7 @@ import Invitation from '../models/Invitation.js';
 import Session from '../models/Session.js';
 import ImportantDate from '../models/ImportantDate.js';
 import FailedPayment from '../models/FailedPayment.js';
+import Offer from '../models/Offer.js';
 import crypto from 'crypto';
 import { sendEmail } from '../config/mailer.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
@@ -745,5 +746,64 @@ export const deleteFailedPayment = async (req, res) => {
     } catch (err) {
         console.error('Delete Failed Payment Error:', err);
         res.status(500).json({ error: 'Failed to delete failed payment record.' });
+    }
+};
+
+// === OFFER MANAGEMENT ===
+
+export const getAllOffers = async (req, res) => {
+    try {
+        const offers = await Offer.find().populate('tierId', 'name category').sort({ createdAt: -1 });
+        res.status(200).json(offers);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch offers.' });
+    }
+};
+
+export const createOffer = async (req, res) => {
+    try {
+        const { email, tierId, amount, currency, expiresAt } = req.body;
+        
+        if (!email || !tierId || !expiresAt || amount === undefined) {
+             return res.status(400).json({ error: 'Missing required fields for offer.' });
+        }
+
+        const token = crypto.randomBytes(16).toString('hex');
+        
+        const offer = await Offer.create({
+            email,
+            tierId,
+            amount: Number(amount),
+            currency: currency || 'USD',
+            expiresAt: new Date(expiresAt),
+            token
+        });
+
+        const paymentLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/offer/${token}`;
+        
+        await sendEmail(
+             email,
+             'Special Payment Offer - Wisvora Peak',
+             `<h1>Special Payment Offer</h1>
+              <p>You have received a custom payment offer.</p>
+              <p>Amount due: <strong>${amount} ${currency || 'USD'}</strong></p>
+              <p>Please click the link below to securely complete your payment:</p>
+              <a href="${paymentLink}" style="display:inline-block; padding:10px 20px; background-color:#0ea5e9; color:white; text-decoration:none; border-radius:5px;">Complete Payment</a>
+              <p>Hurry, this offer expires on ${new Date(expiresAt).toLocaleDateString()}.</p>`
+        );
+
+        res.status(201).json(offer);
+    } catch (err) {
+        console.error('Create offer error:', err);
+        res.status(500).json({ error: 'Failed to create offer.' });
+    }
+};
+
+export const deleteOffer = async (req, res) => {
+    try {
+        await Offer.findByIdAndDelete(req.params.id);
+        res.status(200).json({ message: 'Offer deleted.' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete offer.' });
     }
 };

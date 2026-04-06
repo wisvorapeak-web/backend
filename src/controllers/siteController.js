@@ -14,6 +14,7 @@ import TravelInfo from '../models/TravelInfo.js';
 import Session from '../models/Session.js';
 import ImportantDate from '../models/ImportantDate.js';
 import Registration from '../models/Registration.js';
+import Offer from '../models/Offer.js';
 
 // Helper: safely fetch a SiteSetting by key and return its value
 const fetchSetting = async (key, fallback = []) => {
@@ -260,5 +261,17 @@ export const getRegistrationById = async (req, res) => {
     } catch (error) {
         console.error('getRegistrationById Error:', error);
         res.status(500).json({ error: 'Failed to retrieve registration details.' });
+    }
+};
+
+export const getOfferByToken = async (req, res) => {
+    try {
+        const { token } = req.params;
+        const offer = await Offer.findOne({ token }).populate('tierId', 'name category description features');
+        if (!offer) return res.status(404).json({ error: 'Offer not found or link has expired.' });
+        res.status(200).json(offer);
+    } catch (error) {
+        console.error('getOfferByToken Error:', error);
+        res.status(500).json({ error: 'Failed to retrieve offer details.' });
     }
 };
