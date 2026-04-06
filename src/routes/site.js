@@ -37,8 +37,8 @@ router.get('/hero', cacheMiddleware(3600), getHeroConfig);
 // About
 router.get('/about-highlights', cacheMiddleware(3600), getAboutHighlights);
 
-// Speakers (Direct fetch for category sync)
-router.get('/speakers', getSpeakers);
+// Speakers
+router.get('/speakers', cacheMiddleware(3600), getSpeakers);
 
 // Topics
 router.get('/topics', cacheMiddleware(3600), getTopics);

@@ -6,8 +6,8 @@ import client from '../config/redis.js';
  */
 export const cacheMiddleware = (duration = 3600) => {
     return async (req, res, next) => {
-        // Only cache GET requests and skip in development
-        if (req.method !== 'GET' || !client.isOpen || process.env.NODE_ENV === 'development') {
+        // Only cache GET requests and require Redis to be open
+        if (req.method !== 'GET' || !client.isOpen) {
             return next();
         }
 
