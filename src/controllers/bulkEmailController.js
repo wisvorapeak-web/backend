@@ -95,6 +95,12 @@ export const sendBulkEmail = async (req, res) => {
             });
         }
 
+        // Start SSE
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        if (res.flushHeaders) res.flushHeaders();
+
         // Send emails in batches of 5 to avoid overwhelming SMTP
         const BATCH_SIZE = 5;
         const results = { sent: 0, failed: 0, failedEmails: [] };
@@ -145,13 +151,17 @@ export const sendBulkEmail = async (req, res) => {
 
             await Promise.all(promises);
 
+            const progressPercentage = Math.round((Math.min(i + BATCH_SIZE, validRecipients.length) / validRecipients.length) * 100);
+            res.write(`data: ${JSON.stringify({ type: 'progress', progress: progressPercentage, sent: results.sent, total: validRecipients.length })}\n\n`);
+
             // Small delay between batches to respect SMTP rate limits
             if (i + BATCH_SIZE < validRecipients.length) {
                 await new Promise(r => setTimeout(r, 1000));
             }
         }
 
-        res.status(200).json({
+        res.write(`data: ${JSON.stringify({
+            type: 'complete',
             message: `Bulk email completed. ${results.sent} sent, ${results.failed} failed.`,
             total: validRecipients.length,
             sent: results.sent,
@@ -159,10 +169,16 @@ export const sendBulkEmail = async (req, res) => {
             failedEmails: results.failedEmails,
             skipped: errors.length,
             skippedDetails: errors.slice(0, 10)
-        });
+        })}\n\n`);
+        res.end();
 
     } catch (error) {
         console.error('Bulk Email Error:', error);
-        res.status(500).json({ error: 'Failed to process bulk email.' });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to process bulk email.' });
+        } else {
+            res.write(`data: ${JSON.stringify({ type: 'error', error: 'Failed to process bulk email.' })}\n\n`);
+            res.end();
+        }
     }
 };
