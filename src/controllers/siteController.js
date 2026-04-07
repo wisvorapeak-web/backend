@@ -249,8 +249,7 @@ export const getChairs = async (req, res) => {
             category: o.category || 'Scientific Committee',
             affiliation: o.affiliation || '-',
             location: o.location || '-',
-            image: o.image_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${o.name}`,
-            linkedin_url: o.linkedin_url || ''
+            image: o.image_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${o.name}`
         }));
 
         // Fallback to settings if collection is empty
