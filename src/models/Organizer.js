@@ -6,6 +6,7 @@ const organizerSchema = new mongoose.Schema({
     affiliation: { type: String },
     location: { type: String },
     image_url: { type: String, default: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Organizer' },
+    linkedin_url: { type: String },
     category: { type: String, enum: ['Scientific Committee', 'Organizing Committee', 'Advisory Board', 'Technical Committee'], default: 'Scientific Committee' },
     display_order: { type: Number, default: 0 },
     is_active: { type: Boolean, default: true }
