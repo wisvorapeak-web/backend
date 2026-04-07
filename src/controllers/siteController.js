@@ -15,6 +15,7 @@ import Session from '../models/Session.js';
 import ImportantDate from '../models/ImportantDate.js';
 import Registration from '../models/Registration.js';
 import Offer from '../models/Offer.js';
+import Organizer from '../models/Organizer.js';
 
 // Helper: safely fetch a SiteSetting by key and return its value
 const fetchSetting = async (key, fallback = []) => {
@@ -238,8 +239,35 @@ export const getHeroConfig = async (req, res) => {
 
 export const getChairs = async (req, res) => {
     try {
-        res.status(200).json(await fetchSetting('event_chairs'));
+        const organizers = await Organizer.find({ is_active: true }).sort({ display_order: 1 });
+        
+        // Map to expected frontend format if needed
+        const mapped = organizers.map(o => ({
+            id: o._id,
+            name: o.name,
+            role: o.role,
+            category: o.category || 'Scientific Committee',
+            affiliation: o.affiliation || '-',
+            location: o.location || '-',
+            image: o.image_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${o.name}`
+        }));
+
+        // Fallback to settings if collection is empty
+        if (mapped.length === 0) {
+            const legacy = await fetchSetting('event_chairs');
+            return res.status(200).json(legacy.map((l) => ({
+                id: Math.random().toString(36).substr(2, 9),
+                name: l.name || 'TBA',
+                role: l.role || 'Member',
+                affiliation: l.institution || l.affiliation || '-',
+                location: l.location || 'Global',
+                image: l.image || l.image_url || `https://api.dicebear.com/7.x/initials/svg?seed=${l.name || 'Org'}&background=random`
+            })));
+        }
+
+        res.status(200).json(mapped);
     } catch (error) {
+        console.error('getChairs error:', error);
         res.status(500).json({ error: 'Failed to fetch chairs.' });
     }
 };

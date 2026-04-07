@@ -35,7 +35,8 @@ import {
     getAllSessions, createSession, updateSession, deleteSession,
     getAllImportantDates, createImportantDate, updateImportantDate, deleteImportantDate,
     getAllFailedPayments, updateFailedPaymentStatus, deleteFailedPayment,
-    getAllOffers, createOffer, deleteOffer
+    getAllOffers, createOffer, deleteOffer,
+    getAllOrganizers, createOrganizer, updateOrganizer, deleteOrganizer
 } from '../controllers/adminController.js';
 import { sendBulkEmail, csvMiddleware } from '../controllers/bulkEmailController.js';
 
@@ -162,5 +163,11 @@ router.delete('/failed-payments/:id', deleteFailedPayment);
 router.get('/offers', getAllOffers);
 router.post('/offers', createOffer);
 router.delete('/offers/:id', deleteOffer);
+
+// --- ORGANIZERS (TEAM) ---
+router.get('/organizers', getAllOrganizers);
+router.post('/organizers', createOrganizer);
+router.patch('/organizers/:id', updateOrganizer);
+router.delete('/organizers/:id', deleteOrganizer);
 
 export default router;

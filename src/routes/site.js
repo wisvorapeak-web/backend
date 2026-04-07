@@ -71,7 +71,7 @@ router.get('/audiences', cacheMiddleware(3600), getAudiences);
 router.get('/metrics', cacheMiddleware(3600), getMetrics);
 
 // Chairs
-router.get('/chairs', cacheMiddleware(3600), getChairs);
+router.get('/chairs', getChairs);
 
 // Legal
 router.get('/legal', cacheMiddleware(3600), getLegalContent);

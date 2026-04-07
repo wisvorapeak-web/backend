@@ -19,6 +19,7 @@ import Session from '../models/Session.js';
 import ImportantDate from '../models/ImportantDate.js';
 import FailedPayment from '../models/FailedPayment.js';
 import Offer from '../models/Offer.js';
+import Organizer from '../models/Organizer.js';
 import crypto from 'crypto';
 import { sendEmail } from '../config/mailer.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
@@ -797,6 +798,33 @@ export const createOffer = async (req, res) => {
         console.error('Create offer error:', err);
         res.status(500).json({ error: 'Failed to create offer.' });
     }
+};
+
+// === ORGANIZER MANAGEMENT ===
+export const getAllOrganizers = async (req, res) => {
+    try { res.status(200).json(await Organizer.find().sort({ display_order: 1 })); }
+    catch (err) { res.status(500).json({ error: 'Failed to fetch organizers.' }); }
+};
+export const createOrganizer = async (req, res) => {
+    try {
+        const data = await Organizer.create(req.body);
+        await clearCache('*');
+        res.status(201).json(data);
+    } catch (err) { res.status(500).json({ error: 'Failed to create organizer.' }); }
+};
+export const updateOrganizer = async (req, res) => {
+    try {
+        const data = await Organizer.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        await clearCache('*');
+        res.status(200).json(data);
+    } catch (err) { res.status(500).json({ error: 'Failed to update organizer.' }); }
+};
+export const deleteOrganizer = async (req, res) => {
+    try {
+        await Organizer.findByIdAndDelete(req.params.id);
+        await clearCache('*');
+        res.status(200).json({ message: 'Organizer removed.' });
+    } catch (err) { res.status(500).json({ error: 'Failed to remove organizer.' }); }
 };
 
 export const deleteOffer = async (req, res) => {
