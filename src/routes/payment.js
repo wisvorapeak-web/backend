@@ -7,7 +7,7 @@ const router = Router();
 // All payment routes are public to allow delegates to pay for registration without mandatory user accounts
 // router.use(authMiddleware);
 // Stripe Payment
-router.post('/stripe/checkout-session', paymentController.createStripeCheckoutSession);
+// router.post('/stripe/checkout-session', paymentController.createStripeCheckoutSession);
 
 // Razorpay Order
 router.post('/razorpay/order', paymentController.createRazorpayOrder);

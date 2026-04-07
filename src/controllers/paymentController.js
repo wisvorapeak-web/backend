@@ -182,8 +182,40 @@ export const recordTransaction = async (req, res) => {
 };
 
 const getPaypalAccessToken = async () => {
-    const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`).toString('base64');
-    const response = await fetch(`${process.env.NODE_ENV === 'production' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com'}/v1/oauth2/token`, {
+    const clientId = process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+        throw new Error('PayPal credentials missing in environment variables.');
+    }
+
+    // Auto-detect sandbox vs production based on standard PayPal ID patterns:
+    // - Client IDs starting with 'Ab' or 'A-' are almost always Live.
+    // - Client IDs starting with 'AR' are almost always Sandbox. 
+    // Explicit 'PAYPAL_MODE' or 'NODE_ENV=production' can override.
+    let isSandbox = true;
+    if (process.env.PAYPAL_MODE === 'live') {
+        isSandbox = false;
+    } else if (process.env.PAYPAL_MODE === 'sandbox') {
+        isSandbox = true;
+    } else {
+        // Auto-detect if no explicit mode provided
+        if (clientId.startsWith('Ab') || clientId.startsWith('A-')) {
+            isSandbox = false;
+        } else if (clientId.startsWith('AR')) {
+            isSandbox = true;
+        } else {
+            // Fallback to NODE_ENV if pattern is unclear
+            isSandbox = process.env.NODE_ENV !== 'production';
+        }
+    }
+    
+    const baseUrl = isSandbox ? 'https://api-m.sandbox.paypal.com' : 'https://api-m.paypal.com';
+
+    console.log(`[PayPal] Authenticating with ${isSandbox ? 'Sandbox' : 'Production'} API at ${baseUrl}`);
+
+    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const response = await fetch(`${baseUrl}/v1/oauth2/token`, {
         method: 'POST',
         body: 'grant_type=client_credentials',
         headers: {
@@ -194,12 +226,13 @@ const getPaypalAccessToken = async () => {
 
     if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`PayPal Auth Failed: ${response.status} - ${errText}`);
+        console.error(`[PayPal] Auth Failed: ${response.status} - ${errText}`);
+        throw new Error(`PayPal Auth Failed: ${response.status}. Please check if your Client ID/Secret matches the ${isSandbox ? 'Sandbox' : 'Production'} environment.`);
     }
 
     const data = await response.json();
     if (!data.access_token) throw new Error('PayPal Auth Token missing in response');
-    return data.access_token;
+    return { token: data.access_token, baseUrl };
 };
 
 export const createPaypalOrder = async (req, res) => {
@@ -210,9 +243,9 @@ export const createPaypalOrder = async (req, res) => {
             return res.status(400).json({ error: 'Amount must be a positive number.' });
         }
 
-        const accessToken = await getPaypalAccessToken();
+        const { token: accessToken, baseUrl } = await getPaypalAccessToken();
         
-        const response = await fetch(`${process.env.NODE_ENV === 'production' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com'}/v2/checkout/orders`, {
+        const response = await fetch(`${baseUrl}/v2/checkout/orders`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -252,9 +285,9 @@ export const capturePaypalOrder = async (req, res) => {
         const { orderID } = req.body;
         if (!orderID) return res.status(400).json({ error: 'Order ID is required to capture payment.' });
 
-        const accessToken = await getPaypalAccessToken();
+        const { token: accessToken, baseUrl } = await getPaypalAccessToken();
 
-        const response = await fetch(`${process.env.NODE_ENV === 'production' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com'}/v2/checkout/orders/${orderID}/capture`, {
+        const response = await fetch(`${baseUrl}/v2/checkout/orders/${orderID}/capture`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
