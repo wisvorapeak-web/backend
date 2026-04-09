@@ -492,11 +492,47 @@ export const updateRegistrationStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        const reg = await Registration.findByIdAndUpdate(id, { payment_status: status }, { new: true });
+        
+        const reg = await Registration.findById(id);
         if (!reg) return res.status(404).json({ error: 'Registration not found' });
+
+        const previousStatus = reg.payment_status;
+        reg.payment_status = status;
+
+        if (status === 'Paid') {
+            reg.status = 'Confirmed';
+        }
+
+        await reg.save();
+
+        // Send confirmation email if newly marked as Paid
+        if (status === 'Paid' && previousStatus !== 'Paid') {
+            try {
+                const { templates } = await import('../utils/emailTemplates.js');
+                const fullName = `${reg.firstName} ${reg.lastName}`;
+                await sendEmail(
+                    reg.email,
+                    'Payment Confirmation - ASFAA-2026',
+                    templates.paymentSuccess(
+                        fullName, 
+                        reg.amount, 
+                        reg.currency || 'USD', 
+                        reg.transaction_id || 'OFFLINE-CONFIRMED', 
+                        reg.registrationId
+                    )
+                );
+                console.log(`[Admin] Receipt dispatched to ${reg.email} for manual confirmation.`);
+            } catch (emailErr) {
+                console.error('Failed to send manual confirmation email:', emailErr);
+            }
+        }
+
         await clearCache('*');
         res.status(200).json(reg);
-    } catch (err) { res.status(500).json({ error: 'Failed to update status' }); }
+    } catch (err) { 
+        console.error('Update Registration Status Error:', err);
+        res.status(500).json({ error: 'Failed to update status' }); 
+    }
 };
 
 export const deleteRegistration = async (req, res) => {

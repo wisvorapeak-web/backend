@@ -11,6 +11,8 @@ const registrationSchema = new mongoose.Schema({
     status: { type: String, enum: ['Pending', 'Confirmed', 'Cancelled'], default: 'Pending', index: true },
     payment_status: { type: String, enum: ['Unpaid', 'Paid', 'Pending'], default: 'Unpaid' },
     amount: { type: Number, default: 0 },
+    tax: { type: Number, default: 0 },
+    currency: { type: String, default: 'USD' },
     transaction_id: { type: String },
     payment_method: { type: String },
     registrationId: { type: String, unique: true },

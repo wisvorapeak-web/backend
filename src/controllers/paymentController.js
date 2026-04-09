@@ -81,7 +81,7 @@ export const createRazorpayOrder = async (req, res) => {
 
 export const recordTransaction = async (req, res) => {
   try {
-    const { registration_id, payment_id, amount, currency, status, method, billing_details } = req.body;
+    const { registration_id, payment_id, amount, tax, currency, status, method, billing_details } = req.body;
 
     // Basic validation
     if (!payment_id || !amount || !currency || !status || !method) {
@@ -141,6 +141,7 @@ export const recordTransaction = async (req, res) => {
         registration_id: registration._id,
         payment_id,
         amount,
+        tax,
         currency,
         status,
         method,
@@ -162,7 +163,9 @@ export const recordTransaction = async (req, res) => {
         registration.payment_status = 'Paid';
         registration.transaction_id = payment_id;
         registration.payment_method = method;
-        registration.amount = amount; // Ensure registration captures final amount
+        registration.amount = amount; // Final total captured
+        registration.tax = tax || 0;
+        registration.currency = currency || 'USD';
         registration.status = 'Confirmed';
         await registration.save();
 
@@ -316,7 +319,7 @@ export const recordFailedPayment = async (req, res) => {
   try {
     const {
       name, email, phone, institution, country,
-      tier_name, amount, currency, method,
+      tier_name, amount, tax, currency, method,
       error_code, error_description, error_source, error_step,
       gateway_order_id, gateway_payment_id,
       registration_id
@@ -335,6 +338,7 @@ export const recordFailedPayment = async (req, res) => {
       country,
       tier_name,
       amount,
+      tax: tax || 0,
       currency,
       method,
       error_code,
@@ -358,7 +362,7 @@ export const recordFailedPayment = async (req, res) => {
         <table style="border-collapse: collapse; width: 100%; max-width: 600px;">
           <tr><td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; background: #f8fafc;">Name</td><td style="padding: 8px; border: 1px solid #e2e8f0;">${name}</td></tr>
           <tr><td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; background: #f8fafc;">Email</td><td style="padding: 8px; border: 1px solid #e2e8f0;">${email}</td></tr>
-          <tr><td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; background: #f8fafc;">Amount</td><td style="padding: 8px; border: 1px solid #e2e8f0;">${currency} ${amount}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; background: #f8fafc;">Total Amount</td><td style="padding: 8px; border: 1px solid #e2e8f0;">${currency} ${amount} (Incl. ${tax || 0} Tax)</td></tr>
           <tr><td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; background: #f8fafc;">Method</td><td style="padding: 8px; border: 1px solid #e2e8f0;">${method}</td></tr>
           <tr><td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; background: #f8fafc;">Tier</td><td style="padding: 8px; border: 1px solid #e2e8f0;">${tier_name || 'N/A'}</td></tr>
           <tr><td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; background: #f8fafc;">Error</td><td style="padding: 8px; border: 1px solid #e2e8f0; color: #dc2626;">${error_description || 'Unknown'}</td></tr>

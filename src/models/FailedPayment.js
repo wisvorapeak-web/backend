@@ -11,6 +11,7 @@ const failedPaymentSchema = new mongoose.Schema({
     // Payment context
     tier_name: { type: String },
     amount: { type: Number, required: true },
+    tax: { type: Number, default: 0 },
     currency: { type: String, required: true },
     method: { type: String, required: true, enum: ['stripe', 'razorpay', 'paypal'] },
 
