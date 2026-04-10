@@ -6,7 +6,7 @@ dotenv.config();
 
 import mongoose from 'mongoose';
 import connectDB from './config/db.js';
-import { sendEmail } from './config/mailer.js';
+import { sendEmail, verifyTransporters } from './config/mailer.js';
 import cloudinary from './config/cloudinary.js';
 import { upload, handleUploadError, validateFileUpload } from './utils/fileUpload.js';
 import { sanitizeInput } from './middleware/sanitizationMiddleware.js';
@@ -116,6 +116,10 @@ app.get('/', async (req, res) => {
     }
   });
 });
+
+// --- LIVE COUNTDOWN IMAGE (no auth, no DB needed) ---
+import { getCountdownImage } from './controllers/countdownController.js';
+app.get('/api/countdown', getCountdownImage);
 
 // --- SETUP INITIALIZER ---
 app.use('/api/setup', setupRoutes);
@@ -236,6 +240,9 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     } else {
         console.warn('⚠️ Redis Connection: Check status');
     }
+
+    // Verify mail transporters
+    verifyTransporters().catch(err => console.error('Mail verification error:', err.message));
   });
 }
 

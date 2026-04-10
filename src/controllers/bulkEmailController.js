@@ -1,14 +1,14 @@
 import multer from 'multer';
 import { parse } from 'csv-parse/sync';
-import { sendEmail } from '../config/mailer.js';
+import { sendEmail, allTransporters } from '../config/mailer.js';
 import { layout } from '../utils/emailTemplates.js';
 
-// In-memory storage for CSV files (no need to persist)
+// In-memory CSV upload handler
 const csvUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     fileFilter: (req, file, cb) => {
-        if (file.mimetype !== 'text/csv' && !file.originalname.endsWith('.csv')) {
+        if (!file.originalname.endsWith('.csv')) {
             return cb(new Error('Only CSV files are allowed.'));
         }
         cb(null, true);
@@ -20,13 +20,22 @@ export const csvMiddleware = csvUpload.single('csv');
 /**
  * Send bulk emails from uploaded CSV
  * POST /api/admin/bulk-email
- * Body: multipart/form-data { csv: File, subject: string, content: string, fromName?: string }
- * CSV must have columns: name, email
+ * Supports SSE streaming for real-time progress updates
  */
 export const sendBulkEmail = async (req, res) => {
     try {
-        const { subject, content, fromName, fromEmail } = req.body;
+        const { subject, content, fromName, fromEmail, nameColumn, emailColumn } = req.body;
 
+        console.log('──────────────────────────────────────');
+        console.log('📬 BULK EMAIL DISPATCH');
+        console.log('  Subject:', subject);
+        console.log('  From:', fromName ? `${fromName} <${fromEmail}>` : fromEmail);
+        console.log('  Name Column:', nameColumn);
+        console.log('  Email Column:', emailColumn);
+        console.log('  File:', req.file ? `${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)` : 'MISSING');
+        console.log('──────────────────────────────────────');
+
+        // --- Validate required fields ---
         if (!subject || !content) {
             return res.status(400).json({ error: 'Subject and content are required.' });
         }
@@ -35,7 +44,7 @@ export const sendBulkEmail = async (req, res) => {
             return res.status(400).json({ error: 'CSV file is required.' });
         }
 
-        // Parse CSV
+        // --- Parse CSV ---
         const csvContent = req.file.buffer.toString('utf-8');
         let records;
 
@@ -44,9 +53,11 @@ export const sendBulkEmail = async (req, res) => {
                 columns: true,
                 skip_empty_lines: true,
                 trim: true,
-                relax_column_count: true
+                relax_column_count: true,
+                bom: true
             });
         } catch (parseError) {
+            console.error('❌ CSV Parse Error:', parseError.message);
             return res.status(400).json({ error: `Invalid CSV format: ${parseError.message}` });
         }
 
@@ -54,27 +65,59 @@ export const sendBulkEmail = async (req, res) => {
             return res.status(400).json({ error: 'CSV file is empty or has no valid rows.' });
         }
 
-        if (records.length > 300) {
-            return res.status(400).json({ error: `Maximum allowed is 300 recipients per batch. You uploaded ${records.length}.` });
+        console.log(`  📋 Parsed ${records.length} rows`);
+
+        // --- Enforce limit (300 per active transporter account) ---
+        const accountCount = Math.max(1, allTransporters.length);
+        const MAX_RECIPIENTS = accountCount * 300;
+        if (records.length > MAX_RECIPIENTS) {
+            return res.status(400).json({
+                error: `Maximum ${MAX_RECIPIENTS} recipients per batch (${accountCount} account(s) × 300). You uploaded ${records.length}.`
+            });
         }
 
-        // Validate columns
-        const firstRow = records[0];
-        if (!firstRow.name && !firstRow.Name) {
-            return res.status(400).json({ error: 'CSV must contain a "name" column.' });
-        }
-        if (!firstRow.email && !firstRow.Email) {
-            return res.status(400).json({ error: 'CSV must contain an "email" column.' });
+        // --- Resolve column names ---
+        const availableColumns = Object.keys(records[0]);
+        console.log('  📊 Available columns:', availableColumns);
+
+        const resolvedNameCol = resolveColumn(
+            nameColumn,
+            availableColumns,
+            ['name', 'full name', 'fullname', 'first name', 'firstname', 'recipient_name', 'recipient name']
+        );
+        const resolvedEmailCol = resolveColumn(
+            emailColumn,
+            availableColumns,
+            ['email', 'email address', 'emailaddress', 'mail', 'e-mail']
+        );
+
+        if (!resolvedNameCol) {
+            return res.status(400).json({
+                error: 'Could not identify the Name column.',
+                details: `Available columns: ${availableColumns.join(', ')}.`,
+                availableColumns
+            });
         }
 
-        // Process and validate all rows
+        if (!resolvedEmailCol) {
+            return res.status(400).json({
+                error: 'Could not identify the Email column.',
+                details: `Available columns: ${availableColumns.join(', ')}.`,
+                availableColumns
+            });
+        }
+
+        console.log(`  ✅ Columns: name="${resolvedNameCol}", email="${resolvedEmailCol}"`);
+
+        // --- Extract, validate, and deduplicate recipients ---
         const validRecipients = [];
+        const seenEmails = new Set();
         const errors = [];
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
         records.forEach((row, index) => {
-            const name = row.name || row.Name || '';
-            const email = (row.email || row.Email || '').trim().toLowerCase();
+            const name = (row[resolvedNameCol] || '').toString().trim();
+            const email = (row[resolvedEmailCol] || '').toString().trim().toLowerCase();
 
             if (!email) {
                 errors.push(`Row ${index + 2}: Missing email`);
@@ -84,69 +127,90 @@ export const sendBulkEmail = async (req, res) => {
                 errors.push(`Row ${index + 2}: Invalid email "${email}"`);
                 return;
             }
-            if (!name.trim()) {
+            if (seenEmails.has(email)) {
+                errors.push(`Row ${index + 2}: Duplicate email "${email}" (skipped)`);
+                return;
+            }
+            if (!name) {
                 errors.push(`Row ${index + 2}: Missing name for ${email}`);
                 return;
             }
 
-            validRecipients.push({ name: name.trim(), email });
+            seenEmails.add(email);
+            validRecipients.push({ name, email });
         });
 
         if (validRecipients.length === 0) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: 'No valid recipients found in CSV.',
-                details: errors.slice(0, 10) // Show first 10 errors
+                details: errors.slice(0, 10)
             });
         }
 
-        // Start SSE
+        console.log(`  ✅ ${validRecipients.length} unique recipients, ${errors.length} skipped`);
+
+        // --- Start SSE stream ---
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no'); // Nginx compatibility
         if (res.flushHeaders) res.flushHeaders();
 
-        // Send emails in batches of 5 to avoid overwhelming SMTP
+        // Track if client disconnected
+        let clientDisconnected = false;
+        req.on('close', () => { clientDisconnected = true; });
+
+        const sendSSE = (data) => {
+            if (!clientDisconnected) {
+                try {
+                    res.write(`data: ${JSON.stringify(data)}\n\n`);
+                } catch (e) {
+                    clientDisconnected = true;
+                }
+            }
+        };
+
+        // --- Send emails in controlled batches ---
         const BATCH_SIZE = 5;
+        const BATCH_DELAY_MS = 1500; // 1.5s pause between batches
         const results = { sent: 0, failed: 0, failedEmails: [] };
         const senderName = fromName || 'Ascendix World Food, AgroTech & Animal Science';
-        const senderEmail = fromEmail || 'info@foodagriexpo.com';
+        const senderEmail = fromEmail || allTransporters.length > 0 ? fromEmail : undefined;
 
         for (let i = 0; i < validRecipients.length; i += BATCH_SIZE) {
+            if (clientDisconnected) {
+                console.log('  ⚠️  Client disconnected, aborting bulk email.');
+                break;
+            }
+
             const batch = validRecipients.slice(i, i + BATCH_SIZE);
-            
+
             const promises = batch.map(async (recipient) => {
                 try {
-                    // Personalize content: replace {{name}} placeholder
+                    // Personalize content
                     const personalizedContent = content
                         .replace(/\{\{name\}\}/gi, recipient.name)
                         .replace(/\{\{email\}\}/gi, recipient.email);
 
                     const htmlBody = layout(`
-                        <h2 style="color: #00113a;">${subject}</h2>
-                        <p>Dear ${recipient.name},</p>
-                        
-                        <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; border: 1px solid #e2e8f0;">
-                            <p style="color: #00113a; font-size: 14px; font-weight: bold; margin-top: 0; text-transform: uppercase; letter-spacing: 1px;">Countdown to ASFAA-2026</p>
-                            <img src="https://gen.sendtric.com/countdown/v1?to=1794963600&bg=f8fafc&fg=00113a&days=1&lang=en" style="display: block; margin: 0 auto; max-width: 100%; height: auto;" alt="Countdown to Summit" />
-                        </div>
-
-                        <div style="white-space: pre-line; line-height: 1.8;">
+                        <h2 style="color: #00113a; font-size: 22px; font-weight: 700; margin-top: 0;">${subject}</h2>
+                        <p style="font-size: 16px; color: #475569; margin-bottom: 20px;">Dear ${recipient.name},</p>
+                        <div style="white-space: pre-line; line-height: 1.8; font-size: 15px; color: #334155;">
                             ${personalizedContent}
                         </div>
-                        <br />
-                        <p style="color: #64748b; font-size: 12px;">
-                            This email was sent from ${senderName}.<br/>
-                            If you believe you received this in error, please disregard.
-                        </p>
                     `);
 
+                    const fromHeader = senderEmail
+                        ? `"${senderName}" <${senderEmail}>`
+                        : undefined;
+
                     const success = await sendEmail(
-                        recipient.email, 
-                        subject, 
+                        recipient.email,
+                        subject,
                         htmlBody,
-                        `"${senderName}" <${senderEmail}>`
+                        fromHeader
                     );
-                    
+
                     if (success) {
                         results.sent++;
                     } else {
@@ -154,6 +218,7 @@ export const sendBulkEmail = async (req, res) => {
                         results.failedEmails.push(recipient.email);
                     }
                 } catch (err) {
+                    console.error(`  ❌ Exception for ${recipient.email}:`, err.message);
                     results.failed++;
                     results.failedEmails.push(recipient.email);
                 }
@@ -161,16 +226,26 @@ export const sendBulkEmail = async (req, res) => {
 
             await Promise.all(promises);
 
-            const progressPercentage = Math.round((Math.min(i + BATCH_SIZE, validRecipients.length) / validRecipients.length) * 100);
-            res.write(`data: ${JSON.stringify({ type: 'progress', progress: progressPercentage, sent: results.sent, total: validRecipients.length })}\n\n`);
+            // Send progress update
+            const processed = Math.min(i + BATCH_SIZE, validRecipients.length);
+            const progressPercentage = Math.round((processed / validRecipients.length) * 100);
+            sendSSE({
+                type: 'progress',
+                progress: progressPercentage,
+                sent: results.sent,
+                failed: results.failed,
+                total: validRecipients.length,
+                processed
+            });
 
-            // Small delay between batches to respect SMTP rate limits
+            // Rate-limit pause between batches
             if (i + BATCH_SIZE < validRecipients.length) {
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
             }
         }
 
-        res.write(`data: ${JSON.stringify({
+        // --- Send final result ---
+        const finalResult = {
             type: 'complete',
             message: `Bulk email completed. ${results.sent} sent, ${results.failed} failed.`,
             total: validRecipients.length,
@@ -178,17 +253,53 @@ export const sendBulkEmail = async (req, res) => {
             failed: results.failed,
             failedEmails: results.failedEmails,
             skipped: errors.length,
-            skippedDetails: errors.slice(0, 10)
-        })}\n\n`);
+            skippedDetails: errors.slice(0, 20)
+        };
+
+        console.log(`  📊 RESULT: ${results.sent} sent, ${results.failed} failed, ${errors.length} skipped`);
+        sendSSE(finalResult);
         res.end();
 
     } catch (error) {
-        console.error('Bulk Email Error:', error);
+        console.error('❌ Bulk Email Critical Error:', error);
         if (!res.headersSent) {
-            res.status(500).json({ error: 'Failed to process bulk email.' });
+            res.status(500).json({ error: 'Failed to process bulk email dispatch.' });
         } else {
-            res.write(`data: ${JSON.stringify({ type: 'error', error: 'Failed to process bulk email.' })}\n\n`);
-            res.end();
+            try {
+                res.write(`data: ${JSON.stringify({ type: 'error', error: error.message || 'Internal server error during dispatch.' })}\n\n`);
+                res.end();
+            } catch (e) {
+                // Connection already closed
+            }
         }
     }
 };
+
+/**
+ * Resolve a column name from client input or fuzzy-match fallback candidates.
+ */
+function resolveColumn(clientValue, availableColumns, fallbackCandidates) {
+    if (clientValue) {
+        // Exact match
+        const exact = availableColumns.find(c => c === clientValue);
+        if (exact) return exact;
+
+        // Case-insensitive match
+        const ci = availableColumns.find(c => c.toLowerCase() === clientValue.toLowerCase());
+        if (ci) return ci;
+
+        // Trimmed and cleaned match
+        const cleaned = availableColumns.find(c => 
+            c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === clientValue.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+        );
+        if (cleaned) return cleaned;
+    }
+
+    // Fallback: try common candidates
+    for (const candidate of fallbackCandidates) {
+        const match = availableColumns.find(c => c.toLowerCase() === candidate.toLowerCase());
+        if (match) return match;
+    }
+
+    return null;
+}
