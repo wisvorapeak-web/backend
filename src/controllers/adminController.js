@@ -304,7 +304,9 @@ export const revokeInvitation = async (req, res) => {
 
 export const getInboxMessages = async (req, res) => {
     try {
-        const messages = await Submission.find({ type: 'contact' }).sort({ createdAt: -1 });
+        const messages = await Submission.find({ 
+            type: { $in: ['contact', 'brochure'] } 
+        }).sort({ createdAt: -1 });
         res.status(200).json(messages);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch messages.' });
@@ -550,7 +552,7 @@ export const getAdminStats = async (req, res) => {
     try {
         const usersCount = await User.countDocuments();
         const abstractsCount = await Submission.countDocuments({ type: 'abstract' });
-        const contactsCount = await Submission.countDocuments({ type: 'contact' });
+        const inquiriesCount = await Submission.countDocuments({ type: { $in: ['contact', 'brochure'] } });
         const registrationsCount = await Registration.countDocuments();
         const sponsorsCount = await Sponsor.countDocuments();
         const speakersCount = await Speaker.countDocuments();
@@ -571,7 +573,7 @@ export const getAdminStats = async (req, res) => {
             revision: abstracts?.filter(a => a.status === 'Revision').length || 0
         };
 
-        const recentInquiries = await Submission.find({ type: 'contact' })
+        const recentInquiries = await Submission.find({ type: { $in: ['contact', 'brochure'] } })
             .sort({ createdAt: -1 })
             .limit(5);
 
@@ -592,7 +594,7 @@ export const getAdminStats = async (req, res) => {
         res.status(200).json({
             totalUsers: usersCount,
             totalAbstracts: abstractsCount,
-            totalInquiries: contactsCount,
+            totalInquiries: inquiriesCount,
             totalRegistrations: registrationsCount,
             totalSponsors: sponsorsCount,
             totalSpeakers: speakersCount,
