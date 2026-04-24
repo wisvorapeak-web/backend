@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const submissionSchema = new mongoose.Schema({
-    type: { type: String, enum: ['contact', 'abstract'], required: true, index: true },
+    type: { type: String, enum: ['contact', 'abstract', 'brochure'], required: true, index: true },
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     email: { type: String, required: true, index: true },

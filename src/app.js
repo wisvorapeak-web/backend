@@ -4,6 +4,12 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 dotenv.config();
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 import mongoose from 'mongoose';
 import connectDB from './config/db.js';
 import { sendEmail, verifyTransporters } from './config/mailer.js';
@@ -44,6 +50,10 @@ app.use(cors({
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Static folders (Publicly accessible)
+app.use('/public', express.static(path.join(__dirname, '../public')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Apply input sanitization to all routes
 app.use(sanitizeInput);

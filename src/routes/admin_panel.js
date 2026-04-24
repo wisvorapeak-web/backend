@@ -39,6 +39,7 @@ import {
     getAllOrganizers, createOrganizer, updateOrganizer, deleteOrganizer
 } from '../controllers/adminController.js';
 import { sendBulkEmail, csvMiddleware } from '../controllers/bulkEmailController.js';
+import { upload as cloudinaryUpload } from '../utils/fileUpload.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -99,8 +100,8 @@ router.patch('/sponsors/:id', updateSponsor);
 router.delete('/sponsors/:id', deleteSponsor);
 
 router.get('/brochures', getAllBrochures);
-router.post('/brochures', createBrochure);
-router.patch('/brochures/:id', updateBrochure);
+router.post('/brochures', cloudinaryUpload.single('file'), createBrochure);
+router.patch('/brochures/:id', cloudinaryUpload.single('file'), updateBrochure);
 router.delete('/brochures/:id', deleteBrochure);
 
 router.get('/pricing', getAllPricing);

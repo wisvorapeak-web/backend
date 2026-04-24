@@ -18,7 +18,7 @@ export const validateSubmission = (type, data) => {
         errors.firstName = 'First name is required.';
     }
 
-    if (type === 'contact' || type === 'abstract' || type === 'registration') {
+    if (type === 'contact' || type === 'abstract' || type === 'registration' || type === 'brochure') {
         if (!lastName || validator.isEmpty(lastName.trim())) {
             errors.lastName = 'Last name is required.';
         }

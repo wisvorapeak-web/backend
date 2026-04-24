@@ -690,12 +690,43 @@ export const getAllBrochures = async (req, res) => {
     catch (err) { res.status(500).json({ error: 'Failed to fetch brochures.' }); }
 };
 export const createBrochure = async (req, res) => {
-    try { const data = await Brochure.create(req.body); await clearCache('*'); res.status(201).json(data); }
-    catch (err) { res.status(500).json({ error: 'Failed to create brochure.' }); }
+    try {
+        console.log('[Admin] Creating brochure. Payload:', req.body);
+        if (req.file) console.log('[Admin] Uploaded file details:', { path: req.file.path, size: req.file.size, mimetype: req.file.mimetype });
+
+        const brochureData = { ...req.body };
+        if (req.file) {
+            brochureData.file_url = req.file.path;
+            if (req.file.size) {
+                const sizeMB = (req.file.size / (1024 * 1024)).toFixed(1);
+                brochureData.file_size = `${sizeMB} MB`;
+            }
+        }
+        const data = await Brochure.create(brochureData);
+        await clearCache('*');
+        res.status(201).json(data);
+    } catch (err) {
+        console.error('Create Brochure Error:', err);
+        res.status(500).json({ error: 'Failed to create brochure.' });
+    }
 };
 export const updateBrochure = async (req, res) => {
-    try { const data = await Brochure.findByIdAndUpdate(req.params.id, req.body, { new: true }); await clearCache('*'); res.status(200).json(data); }
-    catch (err) { res.status(500).json({ error: 'Failed to update brochure.' }); }
+    try {
+        const updateData = { ...req.body };
+        if (req.file) {
+            updateData.file_url = req.file.path;
+            if (req.file.size) {
+                const sizeMB = (req.file.size / (1024 * 1024)).toFixed(1);
+                updateData.file_size = `${sizeMB} MB`;
+            }
+        }
+        const data = await Brochure.findByIdAndUpdate(req.params.id, updateData, { new: true });
+        await clearCache('*');
+        res.status(200).json(data);
+    } catch (err) {
+        console.error('Update Brochure Error:', err);
+        res.status(500).json({ error: 'Failed to update brochure.' });
+    }
 };
 export const deleteBrochure = async (req, res) => {
     try { await Brochure.findByIdAndDelete(req.params.id); await clearCache('*'); res.status(200).json({ message: 'Brochure deleted.' }); }

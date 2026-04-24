@@ -153,3 +153,40 @@ export const registerEvent = async (req, res) => {
         res.status(500).json({ error: 'Failed to register for event.' });
     }
 };
+
+export const submitBrochureRequest = async (req, res) => {
+    try {
+        const { isValid, errors } = validateSubmission('brochure', req.body);
+        if (!isValid) return res.status(400).json({ error: 'Validation failed', details: errors });
+
+        const sanitized = sanitizeData(req.body);
+        const { firstName, lastName, email, phone, institution } = sanitized;
+
+        const submissionId = `BRO-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        await Submission.create({ 
+            type: 'brochure',
+            firstName, 
+            lastName, 
+            email: email.toLowerCase(), 
+            phone: phone || null,
+            institution: institution || null,
+            status: 'Approved', // Mark as approved since they get the brochure immediately
+            submissionId
+        });
+
+        // Optional: Send a follow-up email
+        await sendEmail(
+            email,
+            'Brochure Downloaded - Wisvora Scientific',
+            `<h1>Thank you for your interest!</h1>
+             <p>Hi ${firstName},</p>
+             <p>We've recorded your interest in our conference brochure. If you have any questions, feel free to reach out.</p>
+             <p>Best regards,<br>Wisvora Scientific Team</p>`
+        ).catch(err => console.error('Failed to send brochure email:', err));
+
+        res.status(200).json({ message: 'Request recorded successfully.' });
+    } catch (error) {
+        console.error('Brochure request error:', error);
+        res.status(500).json({ error: 'Failed to process brochure request.' });
+    }
+};

@@ -1,5 +1,5 @@
 import express from 'express';
-import { submitContact, submitAbstract, registerEvent } from '../controllers/submissionController.js';
+import { submitContact, submitAbstract, registerEvent, submitBrochureRequest } from '../controllers/submissionController.js';
 import { upload, handleUploadError, validateFileUpload } from '../utils/fileUpload.js';
 
 const router = express.Router();
@@ -18,5 +18,8 @@ router.post('/abstract',
 
 // @route POST /api/submissions/register
 router.post('/register', registerEvent);
+
+// @route POST /api/submissions/brochure
+router.post('/brochure', submitBrochureRequest);
 
 export default router;

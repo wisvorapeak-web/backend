@@ -41,9 +41,13 @@ const fileFilter = (req, file, cb) => {
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: (req, file) => {
-    // Determine folder based on file type
+    // Determine folder based on file type or context
     let folder = 'wisvora_scientific/general';
-    if (file.mimetype.startsWith('image/')) {
+    
+    // Check if the request is specifically for brochures
+    if (req.originalUrl && (req.originalUrl.includes('brochure') || req.originalUrl.includes('brocher'))) {
+      folder = 'brochures';
+    } else if (file.mimetype.startsWith('image/')) {
       folder = 'wisvora_scientific/images';
     } else if (file.mimetype === 'application/pdf') {
       folder = 'wisvora_scientific/abstracts';
