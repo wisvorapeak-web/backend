@@ -698,7 +698,7 @@ export const createBrochure = async (req, res) => {
 
         const brochureData = { ...req.body };
         if (req.file) {
-            brochureData.file_url = req.file.path;
+            brochureData.file_url = req.file.location || req.file.path;
             if (req.file.size) {
                 const sizeMB = (req.file.size / (1024 * 1024)).toFixed(1);
                 brochureData.file_size = `${sizeMB} MB`;
@@ -716,7 +716,7 @@ export const updateBrochure = async (req, res) => {
     try {
         const updateData = { ...req.body };
         if (req.file) {
-            updateData.file_url = req.file.path;
+            updateData.file_url = req.file.location || req.file.path;
             if (req.file.size) {
                 const sizeMB = (req.file.size / (1024 * 1024)).toFixed(1);
                 updateData.file_size = `${sizeMB} MB`;

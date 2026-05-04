@@ -69,7 +69,7 @@ export const submitAbstract = async (req, res) => {
             category,
             title: title, 
             abstract: abstract,
-            file_url: file ? file.path : null,
+            file_url: file ? (file.location || file.path) : null,
             status: 'Pending',
             submissionId
         });

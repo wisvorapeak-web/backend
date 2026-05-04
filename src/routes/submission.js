@@ -1,6 +1,7 @@
 import express from 'express';
 import { submitContact, submitAbstract, registerEvent, submitBrochureRequest } from '../controllers/submissionController.js';
-import { upload, handleUploadError, validateFileUpload } from '../utils/fileUpload.js';
+import { s3Upload } from '../utils/s3Upload.js';
+import { handleUploadError, validateFileUpload } from '../utils/fileUpload.js';
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ router.post('/contact', submitContact);
 // @route POST /api/submissions/abstract
 // File upload with validation
 router.post('/abstract', 
-  upload.single('file'),
+  s3Upload.single('file'),
   handleUploadError,
   validateFileUpload,
   submitAbstract
