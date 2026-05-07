@@ -33,16 +33,48 @@ const createCrudSet = (Model, label) => ({
         catch (err) { res.status(500).json({ error: `Failed to fetch ${label}` }); }
     },
     create: async (req, res) => {
-        try { const data = await Model.create(req.body); await clearCache('*'); res.status(201).json(data); }
-        catch (err) { res.status(500).json({ error: `Failed to create ${label}` }); }
+        try {
+            console.log(`[Admin] Creating ${label}:`, req.body);
+            const data = await Model.create(req.body);
+            await clearCache('*');
+            res.status(201).json(data);
+        }
+        catch (err) {
+            console.error(`[Admin] Create ${label} Error:`, err);
+            res.status(500).json({ 
+                error: `Failed to create ${label}`, 
+                details: err.message,
+                validationErrors: err.errors ? Object.keys(err.errors).map(key => err.errors[key].message) : null
+            });
+        }
     },
     update: async (req, res) => {
-        try { const data = await Model.findByIdAndUpdate(req.params.id, req.body, { new: true }); await clearCache('*'); res.status(200).json(data); }
-        catch (err) { res.status(500).json({ error: `Failed to update ${label}` }); }
+        try {
+            console.log(`[Admin] Updating ${label} ${req.params.id}:`, req.body);
+            const data = await Model.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+            await clearCache('*');
+            res.status(200).json(data);
+        }
+        catch (err) {
+            console.error(`[Admin] Update ${label} Error:`, err);
+            res.status(500).json({ 
+                error: `Failed to update ${label}`, 
+                details: err.message,
+                validationErrors: err.errors ? Object.keys(err.errors).map(key => err.errors[key].message) : null
+            });
+        }
     },
     delete: async (req, res) => {
-        try { await Model.findByIdAndDelete(req.params.id); await clearCache('*'); res.status(200).json({ message: `${label} removed.` }); }
-        catch (err) { res.status(500).json({ error: `Failed to remove ${label}` }); }
+        try {
+            console.log(`[Admin] Deleting ${label}:`, req.params.id);
+            await Model.findByIdAndDelete(req.params.id);
+            await clearCache('*');
+            res.status(200).json({ message: `${label} removed.` });
+        }
+        catch (err) {
+            console.error(`[Admin] Delete ${label} Error:`, err);
+            res.status(500).json({ error: `Failed to remove ${label}`, details: err.message });
+        }
     }
 });
 

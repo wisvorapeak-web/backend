@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 
 const venueSettingSchema = new mongoose.Schema({
-    host_city: { type: String, default: 'Guwahati, Assam' },
+    host_city: { type: String, default: 'Guwahati' },
+    country: { type: String, default: 'India' },
     venue_name: { type: String, default: 'World Scientific Summit Center' },
     venue_address: { type: String, default: 'Guwahati, India' },
     venue_description: { type: String, default: 'State-of-the-art facility for the world food agro-tech summit.' },

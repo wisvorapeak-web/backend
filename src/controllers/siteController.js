@@ -112,6 +112,7 @@ export const getVenue = async (req, res) => {
         const venue = await VenueSetting.findOne();
         res.status(200).json(venue || {
             host_city: 'Singapore',
+            country: 'Singapore',
             venue_name: 'Singapore Summit Center',
             venue_address: 'Singapore Innovation Hub, Singapore',
             venue_description: 'State-of-the-art facility for the world food agro-tech summit.'
@@ -275,6 +276,14 @@ export const getChairs = async (req, res) => {
 export const getTravelInfo = async (req, res) => {
     try {
         const info = await TravelInfo.find().sort({ display_order: 1 });
+        if (info.length === 0) {
+            return res.status(200).json([
+                { title: 'By Air', description: 'Changi Airport (SIN) is the main gateway.', icon_name: 'Plane' },
+                { title: 'Visa Info', description: 'Most visitors do not require a visa for short stays.', icon_name: 'Globe' },
+                { title: 'Hotels', description: 'Multiple 5-star hotels available near the venue.', icon_name: 'Hotel' },
+                { title: 'Transport', description: 'Efficient MRT and bus system across the city.', icon_name: 'Info' }
+            ]);
+        }
         res.status(200).json(info);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch travel info.' });
